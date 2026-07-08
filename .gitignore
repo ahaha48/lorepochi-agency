@@ -1,0 +1,46 @@
+# メンバーデータ・バックアップ（個人情報を含むため絶対にコミットしない）
+lorepochi_backup_*.json
+backup_*.json
+
+# 旧バージョン（メンバーデータが埋め込まれている可能性）
+lorepochi_v5.html
+
+# CSV書き出し（銀行口座・個人情報を含むため絶対にコミットしない）
+*.csv
+
+# 旧アプリのコピー退避ファイル
+*.bak
+
+# スクリーンショット・画像（会員の個人情報が写り込む可能性があるため除外）
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.heic
+スクリーンショット*
+
+# 引き継ぎ仕様書（内部情報のため公開しない）
+lorepochi_spec.md
+
+# シークレット
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+secrets.json
+
+# Claude Code のローカル設定（権限allowlist等・公開不要）
+.claude/
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+
+# Node
+node_modules/
+npm-debug.log*

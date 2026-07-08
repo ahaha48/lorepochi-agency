@@ -1,0 +1,754 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ロレポチ 代理店版</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="ag_calc.js"></script>
+<style>
+  :root{
+    --green:#0B5C3B; --green-dark:#063D27; --green-light:#127A4C;
+    --gold:#C9A24B; --gold-light:#E4C77E; --gold-dark:#A6832F;
+    --ivory:#F6F2E8; --paper:#FFFDF8; --ink:#1A2B22; --muted:#6B7A70;
+    --line:#E7E0CE; --danger:#B23A3A; --ok:#1F7A4D; --warn:#C77B25;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;
+       background:var(--ivory);color:var(--ink);font-size:14px;line-height:1.6}
+  a{color:var(--green-light)}
+  /* ---------- login ---------- */
+  #login-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,var(--green-dark),var(--green));z-index:1000}
+  .login-card{background:var(--paper);border-radius:16px;padding:44px 40px;text-align:center;
+      box-shadow:0 24px 60px rgba(0,0,0,.35);border:2px solid var(--gold);max-width:360px}
+  .login-card .crown{font-size:40px}
+  .login-card h1{font-size:22px;margin:8px 0 2px;color:var(--green)}
+  .login-card .sub{color:var(--gold-dark);letter-spacing:2px;font-size:12px;margin-bottom:22px;font-weight:700}
+  .gbtn{display:inline-flex;align-items:center;gap:10px;background:var(--green);color:#fff;border:none;
+      padding:12px 22px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer}
+  .gbtn:hover{background:var(--green-light)}
+  /* ---------- shell ---------- */
+  .app{display:flex;min-height:100vh;visibility:hidden}
+  .side{width:212px;background:linear-gradient(180deg,var(--green-dark),var(--green));color:#EAF3EC;
+      position:fixed;top:0;bottom:0;left:0;display:flex;flex-direction:column;padding:18px 0}
+  .brand{padding:0 20px 16px;border-bottom:1px solid rgba(201,162,75,.35);margin-bottom:10px}
+  .brand .crown{font-size:22px}
+  .brand h1{font-size:16px;margin:4px 0 0;color:#fff;letter-spacing:.5px}
+  .brand .tag{font-size:10px;color:var(--gold-light);letter-spacing:3px;font-weight:700}
+  .nav{flex:1;overflow:auto}
+  .nav a{display:flex;align-items:center;gap:10px;padding:11px 20px;color:#DCE9DF;text-decoration:none;
+      font-size:13.5px;cursor:pointer;border-left:3px solid transparent}
+  .nav a:hover{background:rgba(255,255,255,.06)}
+  .nav a.active{background:rgba(201,162,75,.16);border-left-color:var(--gold);color:#fff;font-weight:700}
+  .nav .ic{width:18px;text-align:center}
+  .side .foot{padding:12px 20px 0;border-top:1px solid rgba(201,162,75,.35);font-size:11px;color:#BCCFC2}
+  .side .foot .email{color:var(--gold-light);word-break:break-all;margin-bottom:8px}
+  .side .foot button{background:transparent;border:1px solid rgba(255,255,255,.3);color:#EAF3EC;
+      padding:5px 10px;border-radius:6px;font-size:11px;cursor:pointer}
+  .main{margin-left:212px;flex:1;min-width:0}
+  .topbar{background:var(--paper);border-bottom:1px solid var(--line);padding:12px 26px;
+      display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:50}
+  .topbar .title{font-size:17px;font-weight:800;color:var(--green)}
+  .topbar .spacer{flex:1}
+  .mw{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .mw select{padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:#fff;font-size:13px}
+  .content{padding:24px 26px 60px}
+  section{display:none}
+  section.show{display:block;animation:fade .2s}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  /* ---------- ui bits ---------- */
+  h2.sec{font-size:16px;color:var(--green);margin:0 0 14px;display:flex;align-items:center;gap:8px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px}
+  .card>.h{font-weight:800;color:var(--green);margin-bottom:12px;display:flex;align-items:center;gap:8px;
+      border-bottom:2px solid var(--gold-light);padding-bottom:8px}
+  .grid{display:grid;gap:14px}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+      border-top:3px solid var(--gold)}
+  .kpi .lab{font-size:11px;color:var(--muted);font-weight:700}
+  .kpi .val{font-size:24px;font-weight:800;color:var(--green);margin-top:4px}
+  .kpi .val.gold{color:var(--gold-dark)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{background:var(--green);color:#fff;font-weight:700;font-size:12px;position:sticky;top:0}
+  th.r,td.r{text-align:right}
+  tr:hover td{background:#FBF8EF}
+  .tablewrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+  input,select,textarea{font-family:inherit;font-size:13px}
+  .fin{width:64px;padding:5px 6px;border:1px solid var(--line);border-radius:6px;text-align:center}
+  .fin.bad{border-color:var(--danger);background:#FCEEEE}
+  .fin.good{border-color:var(--ok);background:#EEF7F1}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .b-ok{background:#E4F3EA;color:var(--ok)}
+  .b-no{background:#F1EDE2;color:var(--muted)}
+  .b-win{background:var(--gold-light);color:#6b5417}
+  .b-soon{background:#FBE7D2;color:var(--warn)}
+  .b-hold{background:#EDE6F3;color:#6b4a8a}
+  .btn{background:var(--green);color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:700;
+      cursor:pointer;font-size:13px}
+  .btn:hover{background:var(--green-light)}
+  .btn.gold{background:var(--gold-dark)}.btn.gold:hover{background:var(--gold)}
+  .btn.ghost{background:transparent;color:var(--green);border:1px solid var(--green)}
+  .btn.ghost:hover{background:#EFF5F0}
+  .btn.sm{padding:4px 9px;font-size:12px}
+  .btn.danger{background:var(--danger)}
+  .rowbtns{display:flex;gap:6px}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .muted{color:var(--muted)}
+  .pii{font-family:monospace;letter-spacing:1px}
+  /* modal */
+  #modal-bg{position:fixed;inset:0;background:rgba(6,61,39,.45);display:none;align-items:center;
+      justify-content:center;z-index:200}
+  .modal{background:var(--paper);border-radius:14px;padding:22px 24px;width:440px;max-width:92vw;
+      max-height:88vh;overflow:auto;border-top:4px solid var(--gold)}
+  .modal h3{margin:0 0 16px;color:var(--green)}
+  .f{margin-bottom:12px}
+  .f label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
+  .f input,.f select,.f textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+  .f .hint{font-size:11px;color:var(--muted);margin-top:3px}
+  .modal .acts{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+  /* toast */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--green-dark);
+      color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;opacity:0;transition:.25s;z-index:500;
+      border:1px solid var(--gold)}
+  #toast.show{opacity:1}
+  .empty{padding:26px;text-align:center;color:var(--muted)}
+  .pill{font-size:11px;background:var(--green);color:#fff;padding:1px 8px;border-radius:20px}
+</style>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div class="crown">👑</div>
+    <h1>ロレポチ 代理店版</h1>
+    <div class="sub">AGENCY EDITION</div>
+    <button class="gbtn" onclick="signInWithGoogle()">
+      <span>🔐</span> Google でログイン
+    </button>
+    <p class="muted" style="font-size:11px;margin-top:18px">管理者のみアクセスできます</p>
+  </div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="crown">👑</div>
+      <h1>ロレポチ</h1>
+      <div class="tag">代理店版</div>
+    </div>
+    <nav class="nav" id="nav">
+      <a data-sec="dash" class="active"><span class="ic">📊</span>ダッシュボード</a>
+      <a data-sec="weekly"><span class="ic">📝</span>週次入力</a>
+      <a data-sec="endusers"><span class="ic">👥</span>エンドユーザー</a>
+      <a data-sec="orgs"><span class="ic">🏢</span>代理店・ブローカー</a>
+      <a data-sec="wins"><span class="ic">🏆</span>当選者一覧</a>
+      <a data-sec="rewards"><span class="ic">💰</span>報酬・支払い</a>
+      <a data-sec="restrict"><span class="ic">⏳</span>制限管理</a>
+    </nav>
+    <div class="foot">
+      <div class="email" id="user-email"></div>
+      <button onclick="signOut()">ログアウト</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <span class="title" id="sec-title">ダッシュボード</span>
+      <span class="spacer"></span>
+      <div class="mw">
+        <span>対象</span>
+        <select id="sel-month" onchange="onMonthChange()"></select>
+        <select id="sel-week" onchange="onWeekChange()"></select>
+      </div>
+      <button class="btn ghost sm" onclick="reload()">↻ 更新</button>
+    </div>
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <section id="sec-dash" class="show">
+        <h2 class="sec">📊 ダッシュボード</h2>
+        <div class="grid kpis" id="dash-kpis"></div>
+        <div class="card">
+          <div class="h">🏢 代理店別 支払い見込み（弊社→代理店）</div>
+          <div id="dash-agency"></div>
+        </div>
+        <div class="card">
+          <div class="h">⏳ まもなく制限解除（7日以内）</div>
+          <div id="dash-soon"></div>
+        </div>
+      </section>
+
+      <!-- WEEKLY -->
+      <section id="sec-weekly">
+        <h2 class="sec">📝 週次入力 <span class="pill" id="weekly-label"></span></h2>
+        <div class="toolbar">
+          <select id="weekly-broker" onchange="renderWeekly()"></select>
+          <span class="muted">条件：抽選 <b id="req1">5</b> 店舗 ＆ 結果 <b id="req2">5</b> 店舗で達成</span>
+          <span class="spacer" style="flex:1"></span>
+          <span class="muted">数値は自動保存されます</span>
+        </div>
+        <div class="tablewrap">
+          <table id="weekly-table"></table>
+        </div>
+        <p class="muted" style="font-size:12px;margin-top:10px">
+          ※「当選登録」で当選を登録すると、その週以降は応募フィーが停止します（当選前の週の報酬は保持されます）。
+        </p>
+      </section>
+
+      <!-- END USERS -->
+      <section id="sec-endusers">
+        <h2 class="sec">👥 エンドユーザー管理</h2>
+        <div class="toolbar">
+          <button class="btn" onclick="editEndUser()">＋ エンドユーザー追加</button>
+          <select id="eu-filter" onchange="renderEndUsers()"></select>
+          <label class="muted" style="font-size:12px"><input type="checkbox" id="eu-reveal" onchange="renderEndUsers()"> 口座情報を表示（🔒管理者のみ）</label>
+        </div>
+        <div class="tablewrap"><table id="eu-table"></table></div>
+      </section>
+
+      <!-- ORGS -->
+      <section id="sec-orgs">
+        <h2 class="sec">🏢 代理店・ブローカー管理</h2>
+        <div class="toolbar">
+          <button class="btn" onclick="editAgency()">＋ 代理店追加</button>
+          <button class="btn ghost" onclick="editBroker()">＋ ブローカー追加</button>
+          <label class="muted" style="font-size:12px"><input type="checkbox" id="org-reveal" onchange="renderOrgs()"> 口座情報を表示（🔒管理者のみ）</label>
+        </div>
+        <div id="orgs-body"></div>
+      </section>
+
+      <!-- WINS -->
+      <section id="sec-wins">
+        <h2 class="sec">🏆 当選者一覧</h2>
+        <div class="toolbar">
+          <button class="btn gold" onclick="editWin()">＋ 当選を登録</button>
+          <label class="muted" style="font-size:12px"><input type="checkbox" id="wins-hold" onchange="renderWins()"> 保留（入店未完了）のみ</label>
+        </div>
+        <div class="tablewrap"><table id="wins-table"></table></div>
+        <p class="muted" style="font-size:12px;margin-top:10px">
+          ※ 支払い（当選報酬・当選者フィー）は「入店完了」にした時点で確定し、入店完了日の月に計上されます。
+        </p>
+      </section>
+
+      <!-- REWARDS -->
+      <section id="sec-rewards">
+        <h2 class="sec">💰 報酬・支払い</h2>
+        <div class="toolbar">
+          <button class="btn gold" onclick="csvAgency()">⬇ 代理店支払いCSV</button>
+          <button class="btn gold" onclick="csvBroker()">⬇ ブローカー別CSV</button>
+          <button class="btn ghost" onclick="csvEndUser()">⬇ エンド報酬CSV</button>
+          <span class="muted" style="font-size:12px">対象：登録済みの全月</span>
+        </div>
+        <div class="card"><div class="h">🏢 代理店別（弊社→代理店の支払い）</div><div id="rw-agency"></div></div>
+        <div class="card"><div class="h">🧑‍💼 ブローカー別</div><div id="rw-broker"></div></div>
+        <div class="card"><div class="h">👤 エンドユーザー別 報酬（代理店が外部で支払う参考値）</div><div id="rw-enduser"></div></div>
+      </section>
+
+      <!-- RESTRICT -->
+      <section id="sec-restrict">
+        <h2 class="sec">⏳ 制限管理（解除カウントダウン）</h2>
+        <div class="toolbar">
+          <label class="muted" style="font-size:12px"><input type="checkbox" id="rs-soon" onchange="renderRestrict()"> まもなく解除（7日以内）のみ</label>
+          <span class="muted" style="font-size:12px">起算：入店完了日（なければ当選日）＋ <b id="rdays">180</b> 日</span>
+        </div>
+        <div class="tablewrap"><table id="rs-table"></table></div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div id="modal-bg"><div class="modal" id="modal"></div></div>
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+ * ロレポチ代理店版 アプリ本体
+ * DB: 本番ロレポチと同一プロジェクトに ag_ 接頭辞で同居（RLSで保護）
+ * 認証: 既存ロレポチと同じ Google OAuth
+ * ※ SUPABASE_ANON_KEY は「公開前提の anon(publishable) キー」。
+ *    RLS で保護されるため client 埋め込みが正しい使い方。
+ *    service_role キーは絶対にここに置かないこと。
+ * ============================================================ */
+const SUPABASE_URL = 'https://ixwrecvoqvuzzvxsafvw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml4d3JlY3ZvcXZ1enp2eHNhZnZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MTMwNjYsImV4cCI6MjA5MDE4OTA2Nn0.UCCEzORa6RhR0sNyXvqv4P8nEeoVF20r3f8oTyO7Xok';
+
+let SB = null;
+const CFG_DEFAULT = { key:'main', cur_month:1, cur_week:1, available_months:[1],
+  weeks_per_month:{"1":[1,2,3,4]}, required_stores:5, fee_enduser_weekly:500,
+  fee_enduser_monthly_bonus:1000, cap_enduser_monthly:3000, reward_enduser_win:20000,
+  fee_agency_weekly:1000, fee_agency_win_1st:50000, fee_agency_win_2nd:70000, restriction_days:180 };
+let AG = { agencies:[], brokers:[], endUsers:[], weekly:[], wins:[], bankAccounts:[], config:Object.assign({},CFG_DEFAULT) };
+
+// 銀行口座を閲覧・編集できる管理者（RLSでもDB側で強制。ここはUI表示制御用）
+const ADMIN_EMAILS = ['ahahakoubou48@gmail.com'];
+let CURRENT_EMAIL = '';
+function isAdmin(){ return ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((CURRENT_EMAIL||'').toLowerCase()); }
+function bankOf(type,id){ const r=AG.bankAccounts.find(x=>x.owner_type===type&&x.owner_id===id); return r?r.bank_info:''; }
+
+/* ---------- utils ---------- */
+const $ = s => document.querySelector(s);
+const yen = n => '¥' + (n||0).toLocaleString();
+function todayYMD(){ const d=new Date(); return ''+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
+function fmtDate(s){ if(!s||(''+s).length<8)return '—'; s=''+s; return s.slice(0,4)+'/'+s.slice(4,6)+'/'+s.slice(6,8); }
+function esc(s){ return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1900); }
+function brokerName(id){ const b=AG.brokers.find(x=>x.id===id); return b?b.name:'（未所属）'; }
+function euName(u){ return u.line_name || u.real_name || ('ID'+u.id); }
+function mask(s){ if(!s) return '—'; return '••••'+(''+s).slice(-3); }
+
+/* ---------- auth ---------- */
+function signInWithGoogle(){ if(SB) SB.auth.signInWithOAuth({ provider:'google', options:{ redirectTo:window.location.href } }); }
+async function signOut(){ if(SB) await SB.auth.signOut(); location.reload(); }
+
+/* ---------- data ---------- */
+async function loadAll(){
+  const [a,b,e,w,wi,c,bk] = await Promise.all([
+    SB.from('ag_agencies').select('*').order('created_at'),
+    SB.from('ag_brokers').select('*').order('created_at'),
+    SB.from('ag_end_users').select('*').order('created_at'),
+    SB.from('ag_weekly').select('*'),
+    SB.from('ag_wins').select('*'),
+    SB.from('ag_config').select('*').eq('key','main').maybeSingle(),
+    SB.from('ag_bank_accounts').select('*')   // 管理者以外はRLSで0件が返る
+  ]);
+  AG.agencies=a.data||[]; AG.brokers=b.data||[]; AG.endUsers=e.data||[]; AG.weekly=w.data||[]; AG.wins=wi.data||[]; AG.bankAccounts=bk.data||[];
+  AG.config = Object.assign({}, CFG_DEFAULT, c.data||{});
+  if(!AG.config.available_months || !AG.config.available_months.length) AG.config.available_months=[1];
+  if(!AG.config.weeks_per_month || !Object.keys(AG.config.weeks_per_month).length) AG.config.weeks_per_month={"1":[1,2,3,4]};
+}
+async function saveConfig(){ AG.config.key='main'; await SB.from('ag_config').upsert(AG.config); }
+function cfg(){ return AG.config; }
+
+/* ---------- month / week ---------- */
+function weeksOf(m){ return (cfg().weeks_per_month[m] || cfg().weeks_per_month[String(m)] || [1,2,3,4]); }
+function buildMWSelectors(){
+  const ms=cfg().available_months.slice().sort((a,b)=>a-b);
+  $('#sel-month').innerHTML = ms.map(m=>`<option value="${m}" ${m===cfg().cur_month?'selected':''}>${m}月</option>`).join('')
+    + '<option value="__add">＋月追加</option>';
+  const wk=weeksOf(cfg().cur_month);
+  $('#sel-week').innerHTML = wk.map(w=>`<option value="${w}" ${w===cfg().cur_week?'selected':''}>第${w}週</option>`).join('')
+    + '<option value="__add">＋週追加</option>';
+}
+async function onMonthChange(){
+  const v=$('#sel-month').value;
+  if(v==='__add'){
+    const next=Math.max(...cfg().available_months)+1;
+    if(next>12){ toast('12月までです'); buildMWSelectors(); return; }
+    cfg().available_months.push(next); cfg().weeks_per_month[next]=[1,2,3,4];
+    cfg().cur_month=next; cfg().cur_week=1; await saveConfig(); toast(next+'月を追加');
+  } else { cfg().cur_month=+v; cfg().cur_week=weeksOf(+v)[0]; await saveConfig(); }
+  buildMWSelectors(); renderCurrent();
+}
+async function onWeekChange(){
+  const v=$('#sel-week').value;
+  if(v==='__add'){
+    const arr=weeksOf(cfg().cur_month); const next=Math.max(...arr)+1;
+    if(next>6){ toast('第6週までです'); buildMWSelectors(); return; }
+    cfg().weeks_per_month[cfg().cur_month]=arr.concat(next); cfg().cur_week=next; await saveConfig(); toast('第'+next+'週を追加');
+  } else { cfg().cur_week=+v; await saveConfig(); }
+  buildMWSelectors(); renderCurrent();
+}
+
+/* ---------- weekly ---------- */
+function weeklyRow(euId,m,wk){ return AG.weekly.find(r=>r.month===m&&r.week===wk&&r.end_user_id===euId); }
+async function saveWeekly(euId, field, value){
+  const m=cfg().cur_month, wk=cfg().cur_week;
+  let row=weeklyRow(euId,m,wk);
+  if(!row){ row={month:m,week:wk,end_user_id:euId,lottery_stores:0,result_stores:0,note:''}; AG.weekly.push(row); }
+  row[field]=Math.max(0,Math.min(9,parseInt(value)||0));
+  const {error}=await SB.from('ag_weekly').upsert(row,{onConflict:'month,week,end_user_id'});
+  if(error){ toast('保存失敗: '+error.message); } else { toast('保存しました'); }
+  renderWeekly();
+}
+function renderWeekly(){
+  const m=cfg().cur_month, wk=cfg().cur_week;
+  $('#weekly-label').textContent=`${m}月 第${wk}週`;
+  $('#req1').textContent=cfg().required_stores; $('#req2').textContent=cfg().required_stores;
+  const sel=$('#weekly-broker'); const cur=sel.value;
+  sel.innerHTML='<option value="">全ブローカー</option>'+AG.brokers.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  if(cur) sel.value=cur;
+  const bf=sel.value?+sel.value:null;
+  let list=AG.endUsers.filter(u=>!bf||u.broker_id===bf);
+  const t=$('#weekly-table');
+  if(!list.length){ t.innerHTML=`<tr><td class="empty">エンドユーザーがいません。「エンドユーザー」画面で追加してください。</td></tr>`; return; }
+  const need=cfg().required_stores;
+  const cls=v=>v>=need?'good':(v>0?'bad':'');
+  let h=`<tr><th>エンドユーザー</th><th>ブローカー</th><th>抽選店舗</th><th>結果店舗</th><th>状態</th><th>操作</th></tr>`;
+  list.forEach(u=>{
+    const r=weeklyRow(u.id,m,wk)||{lottery_stores:0,result_stores:0};
+    const won=AgCalc.hasWinByWeek(AG.wins,u.id,m,wk);
+    const met=AgCalc.conditionMet(r,cfg());
+    const feeOn=AgCalc.feeApplies({end_user_id:u.id,month:m,week:wk,lottery_stores:r.lottery_stores,result_stores:r.result_stores},AG.wins,cfg());
+    let st = won?'<span class="badge b-win">当選済(フィー停止)</span>'
+            : met?(feeOn?'<span class="badge b-ok">達成→フィー対象</span>':'<span class="badge b-no">達成</span>')
+            :'<span class="badge b-no">未達成</span>';
+    h+=`<tr><td>${esc(euName(u))}</td><td class="muted">${esc(brokerName(u.broker_id))}</td>
+      <td><input class="fin ${cls(r.lottery_stores)}" type="number" min="0" max="9" value="${r.lottery_stores||0}"
+           onchange="saveWeekly(${u.id},'lottery_stores',this.value)"></td>
+      <td><input class="fin ${cls(r.result_stores)}" type="number" min="0" max="9" value="${r.result_stores||0}"
+           onchange="saveWeekly(${u.id},'result_stores',this.value)"></td>
+      <td>${st}</td>
+      <td><button class="btn sm gold" onclick="editWin(null,${u.id})">当選登録</button></td></tr>`;
+  });
+  t.innerHTML=h;
+}
+
+/* ---------- end users ---------- */
+function renderEndUsers(){
+  const sel=$('#eu-filter'); const cur=sel.value;
+  sel.innerHTML='<option value="">全ブローカー</option>'+AG.brokers.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  if(cur) sel.value=cur;
+  const bf=sel.value?+sel.value:null;
+  const reveal=$('#eu-reveal').checked;
+  let list=AG.endUsers.filter(u=>!bf||u.broker_id===bf);
+  const t=$('#eu-table');
+  if(!list.length){ t.innerHTML=`<tr><td class="empty">まだ登録がありません</td></tr>`; return; }
+  let h=`<tr><th>LINE名</th><th>本名</th><th>ブローカー</th><th>口座情報</th><th>状態</th><th>操作</th></tr>`;
+  list.forEach(u=>{
+    h+=`<tr><td>${esc(u.line_name)||'—'}</td><td>${esc(u.real_name)||'—'}</td>
+      <td class="muted">${esc(brokerName(u.broker_id))}</td>
+      <td class="pii">${isAdmin()?(reveal?(esc(bankOf('end_user',u.id))||'—'):mask(bankOf('end_user',u.id))):'🔒'}</td>
+      <td><span class="badge b-no">${esc(u.status)||'—'}</span></td>
+      <td class="rowbtns"><button class="btn sm ghost" onclick="editEndUser(${u.id})">編集</button>
+      <button class="btn sm danger" onclick="delEndUser(${u.id})">削除</button></td></tr>`;
+  });
+  t.innerHTML=h;
+}
+function editEndUser(id){
+  const u = id?AG.endUsers.find(x=>x.id===id):{};
+  if(!AG.brokers.length){ toast('先にブローカーを登録してください'); return; }
+  const bankField = isAdmin() ? `
+    <div class="f"><label>銀行口座情報 <span class="muted">（🔒管理者のみ・機微情報）</span></label><input id="m-bank" value="${esc(id?bankOf('end_user',id):'')}" placeholder="銀行/支店/種別/番号/名義"><div class="hint">管理者専用テーブルに保存。入力部隊など他のログインユーザーには表示されません。</div></div>` : '';
+  openModal(id?'エンドユーザー編集':'エンドユーザー追加', `
+    <div class="f"><label>ブローカー</label><select id="m-broker">${AG.brokers.map(b=>`<option value="${b.id}" ${u.broker_id===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>公式LINE名</label><input id="m-line" value="${esc(u.line_name)||''}"></div>
+    <div class="f"><label>本名（照合用）</label><input id="m-real" value="${esc(u.real_name)||''}"></div>
+    ${bankField}
+    <div class="f"><label>状態</label><select id="m-status">${['応募中','制限中','2本目応募中','完了','停止'].map(s=>`<option ${u.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+  `, async ()=>{
+    const eid = id||Date.now();
+    const row={ id:eid, broker_id:+$('#m-broker').value, line_name:$('#m-line').value.trim(),
+      real_name:$('#m-real').value.trim(), status:$('#m-status').value };
+    const {error}=await SB.from('ag_end_users').upsert(row);
+    if(error){ toast('失敗: '+error.message); return false; }
+    if(isAdmin() && $('#m-bank')){
+      const {error:be}=await SB.from('ag_bank_accounts').upsert({owner_type:'end_user',owner_id:eid,bank_info:$('#m-bank').value.trim()},{onConflict:'owner_type,owner_id'});
+      if(be){ toast('口座保存失敗: '+be.message); return false; }
+    }
+    await reload(); toast('保存しました');
+  });
+}
+async function delEndUser(id){
+  const u=AG.endUsers.find(x=>x.id===id);
+  confirmModal(`「${esc(euName(u))}」を削除しますか？<br><span class="muted">この人の週次・当選データも一緒に削除されます。</span>`, async ()=>{
+    await SB.from('ag_end_users').delete().eq('id',id);
+    if(isAdmin()) await SB.from('ag_bank_accounts').delete().eq('owner_type','end_user').eq('owner_id',id);
+    await reload(); toast('削除しました');
+  });
+}
+
+/* ---------- orgs ---------- */
+function renderOrgs(){
+  const reveal=$('#org-reveal').checked;
+  const body=$('#orgs-body');
+  if(!AG.agencies.length){ body.innerHTML=`<div class="card"><div class="empty">代理店がまだありません。「＋代理店追加」から登録してください。</div></div>`; return; }
+  let h='';
+  AG.agencies.forEach(a=>{
+    const brokers=AG.brokers.filter(b=>b.agency_id===a.id);
+    h+=`<div class="card"><div class="h">🏢 ${esc(a.name)}
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn sm ghost" onclick="editAgency(${a.id})">編集</button>
+      <button class="btn sm danger" onclick="delAgency(${a.id})">削除</button></div>
+      <div class="muted" style="margin:-4px 0 12px">振込先: <span class="pii">${isAdmin()?(reveal?(esc(bankOf('agency',a.id))||'—'):mask(bankOf('agency',a.id))):'🔒 管理者のみ'}</span></div>
+      <div class="tablewrap"><table><tr><th>ブローカー</th><th>所属エンド数</th><th>操作</th></tr>`;
+    if(!brokers.length){ h+=`<tr><td colspan="3" class="muted" style="padding:12px">ブローカー未登録</td></tr>`; }
+    brokers.forEach(b=>{
+      const n=AG.endUsers.filter(u=>u.broker_id===b.id).length;
+      h+=`<tr><td>${esc(b.name)}</td><td>${n}人</td>
+        <td class="rowbtns"><button class="btn sm ghost" onclick="editBroker(${b.id})">編集</button>
+        <button class="btn sm danger" onclick="delBroker(${b.id})">削除</button></td></tr>`;
+    });
+    h+=`</table></div></div>`;
+  });
+  body.innerHTML=h;
+}
+function editAgency(id){
+  const a=id?AG.agencies.find(x=>x.id===id):{};
+  const bankField = isAdmin() ? `
+    <div class="f"><label>振込先口座 <span class="muted">（🔒管理者のみ・弊社→代理店）</span></label><input id="m-bank" value="${esc(id?bankOf('agency',id):'')}" placeholder="銀行/支店/種別/番号/名義"></div>` : '';
+  openModal(id?'代理店編集':'代理店追加',`
+    <div class="f"><label>代理店名</label><input id="m-name" value="${esc(a.name)||''}"></div>
+    ${bankField}
+    <div class="f"><label>メモ</label><input id="m-note" value="${esc(a.note)||''}"></div>
+  `, async ()=>{
+    const name=$('#m-name').value.trim(); if(!name){ toast('代理店名を入力'); return false; }
+    const aid = id||Date.now();
+    const row={ id:aid, name, note:$('#m-note').value.trim() };
+    const {error}=await SB.from('ag_agencies').upsert(row);
+    if(error){ toast('失敗: '+error.message); return false; }
+    if(isAdmin() && $('#m-bank')){
+      const {error:be}=await SB.from('ag_bank_accounts').upsert({owner_type:'agency',owner_id:aid,bank_info:$('#m-bank').value.trim()},{onConflict:'owner_type,owner_id'});
+      if(be){ toast('口座保存失敗: '+be.message); return false; }
+    }
+    await reload(); toast('保存しました');
+  });
+}
+async function delAgency(id){
+  const a=AG.agencies.find(x=>x.id===id);
+  confirmModal(`代理店「${esc(a.name)}」を削除しますか？<br><span class="muted">配下のブローカー・エンドユーザー・週次・当選も削除されます。</span>`, async ()=>{
+    if(isAdmin()){
+      const brokerIds=AG.brokers.filter(b=>b.agency_id===id).map(b=>b.id);
+      const euIds=AG.endUsers.filter(u=>brokerIds.includes(u.broker_id)).map(u=>u.id);
+      await SB.from('ag_bank_accounts').delete().eq('owner_type','agency').eq('owner_id',id);
+      if(euIds.length) await SB.from('ag_bank_accounts').delete().eq('owner_type','end_user').in('owner_id',euIds);
+    }
+    await SB.from('ag_agencies').delete().eq('id',id); await reload(); toast('削除しました');
+  });
+}
+function editBroker(id){
+  const b=id?AG.brokers.find(x=>x.id===id):{};
+  if(!AG.agencies.length){ toast('先に代理店を登録してください'); return; }
+  openModal(id?'ブローカー編集':'ブローカー追加',`
+    <div class="f"><label>所属代理店</label><select id="m-agency">${AG.agencies.map(a=>`<option value="${a.id}" ${b.agency_id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>ブローカー名</label><input id="m-name" value="${esc(b.name)||''}"></div>
+    <div class="f"><label>メモ</label><input id="m-note" value="${esc(b.note)||''}"></div>
+  `, async ()=>{
+    const name=$('#m-name').value.trim(); if(!name){ toast('ブローカー名を入力'); return false; }
+    const row={ id:id||Date.now(), agency_id:+$('#m-agency').value, name, note:$('#m-note').value.trim() };
+    const {error}=await SB.from('ag_brokers').upsert(row);
+    if(error){ toast('失敗: '+error.message); return false; }
+    await reload(); toast('保存しました');
+  });
+}
+async function delBroker(id){
+  const b=AG.brokers.find(x=>x.id===id);
+  confirmModal(`ブローカー「${esc(b.name)}」を削除しますか？<br><span class="muted">配下のエンドユーザー等も削除されます。</span>`, async ()=>{
+    await SB.from('ag_brokers').delete().eq('id',id); await reload(); toast('削除しました');
+  });
+}
+
+/* ---------- wins ---------- */
+function renderWins(){
+  const holdOnly=$('#wins-hold').checked;
+  let list=AG.wins.slice().sort((a,b)=>(''+(b.won_date||'')).localeCompare(''+(a.won_date||'')));
+  if(holdOnly) list=list.filter(w=>!w.store_entry_completed);
+  const t=$('#wins-table');
+  if(!list.length){ t.innerHTML=`<tr><td class="empty">当選の登録はありません</td></tr>`; return; }
+  let h=`<tr><th>エンド</th><th>当選日</th><th>店舗</th><th>月/週</th><th>入店完了</th><th>完了日</th><th>購入ｲﾝｾﾝﾃｨﾌﾞ</th><th>操作</th></tr>`;
+  list.forEach(w=>{
+    const u=AG.endUsers.find(x=>x.id===w.end_user_id);
+    const done=w.store_entry_completed;
+    h+=`<tr><td>${esc(u?euName(u):'ID'+w.end_user_id)}</td>
+      <td>${fmtDate(w.won_date)}</td><td>${esc(w.shop)||'—'}</td>
+      <td class="muted">${w.month||'—'}月${w.week?'第'+w.week+'週':''}</td>
+      <td>${done?'<span class="badge b-ok">完了</span>':'<span class="badge b-hold">保留</span>'}</td>
+      <td>${done?fmtDate(w.store_entry_date):'—'}</td>
+      <td class="r">${w.purchase_incentive?yen(w.purchase_incentive):'—'}</td>
+      <td class="rowbtns"><button class="btn sm ghost" onclick="editWin(${w.id})">編集</button>
+      <button class="btn sm danger" onclick="delWin(${w.id})">削除</button></td></tr>`;
+  });
+  t.innerHTML=h;
+}
+function editWin(id, preEuId){
+  const w=id?AG.wins.find(x=>x.id===id):{};
+  if(!AG.endUsers.length){ toast('先にエンドユーザーを登録してください'); return; }
+  const euId = w.end_user_id || preEuId;
+  const d2i=s=>s?(''+s).slice(0,4)+'-'+(''+s).slice(4,6)+'-'+(''+s).slice(6,8):'';
+  openModal(id?'当選 編集':'当選 登録',`
+    <div class="f"><label>エンドユーザー</label><select id="m-eu">${AG.endUsers.map(u=>`<option value="${u.id}" ${euId===u.id?'selected':''}>${esc(euName(u))}（${esc(brokerName(u.broker_id))}）</option>`).join('')}</select></div>
+    <div class="f"><label>当選日</label><input id="m-won" type="date" value="${d2i(w.won_date)}"></div>
+    <div class="f"><label>店舗</label><input id="m-shop" value="${esc(w.shop)||''}"></div>
+    <div class="f" style="display:flex;gap:10px">
+      <div style="flex:1"><label>月</label><input id="m-month" type="number" min="1" max="12" value="${w.month||cfg().cur_month}"></div>
+      <div style="flex:1"><label>週</label><input id="m-week" type="number" min="1" max="6" value="${w.week||cfg().cur_week}"></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <div class="f"><label><input type="checkbox" id="m-done" ${w.store_entry_completed?'checked':''}> 入店完了（＝支払い確定・制限起算）</label></div>
+    <div class="f"><label>入店完了日</label><input id="m-donedate" type="date" value="${d2i(w.store_entry_date)}"></div>
+    <div class="f"><label>購入インセンティブ（円）</label><input id="m-inc" type="number" min="0" value="${w.purchase_incentive||0}"></div>
+  `, async ()=>{
+    const won=$('#m-won').value.replace(/-/g,'');
+    const dd=$('#m-donedate').value.replace(/-/g,'');
+    const done=$('#m-done').checked;
+    if(done && !dd){ toast('入店完了日を入れてください'); return false; }
+    const row={ id:id||Date.now(), end_user_id:+$('#m-eu').value, won_date:won, shop:$('#m-shop').value.trim(),
+      month:+$('#m-month').value, week:+$('#m-week').value, store_entry_completed:done,
+      store_entry_date:done?dd:null, purchase_incentive:parseInt($('#m-inc').value)||0 };
+    const {error}=await SB.from('ag_wins').upsert(row);
+    if(error){ toast('失敗: '+error.message); return false; }
+    await reload(); toast('保存しました');
+  });
+}
+async function delWin(id){
+  confirmModal('この当選登録を削除しますか？', async ()=>{
+    await SB.from('ag_wins').delete().eq('id',id); await reload(); toast('削除しました');
+  });
+}
+
+/* ---------- rewards ---------- */
+function computeDetail(){
+  const c=cfg(); const months=c.available_months.slice();
+  return AG.endUsers.map(u=>{
+    let euPart=0, agApp=0;
+    months.forEach(m=>{
+      euPart += AgCalc.endUserMonthlyParticipation(u.id,m,AG.weekly,AG.wins,weeksOf(m),c).total;
+      agApp  += AgCalc.agencyMonthlyAppFee(u.id,m,AG.weekly,AG.wins,c).total;
+    });
+    const cw=AgCalc.completedWins(u.id,AG.wins,c);
+    let euWin=0, agWin=0; cw.forEach(x=>{euWin+=x.endUserReward; agWin+=x.agencyFee;});
+    const broker=AG.brokers.find(b=>b.id===u.broker_id); const agency=broker?AG.agencies.find(a=>a.id===broker.agency_id):null;
+    return {u, broker, agency, euPart, euWin, euTotal:euPart+euWin, agApp, agWin, agTotal:agApp+agWin, wins:cw.length};
+  });
+}
+function sumBy(det, keyFn, fields){
+  const map={};
+  det.forEach(d=>{ const k=keyFn(d); if(!map[k]) map[k]={_k:k}; fields.forEach(f=>map[k][f]=(map[k][f]||0)+d[f]); });
+  return map;
+}
+function renderRewards(){
+  const det=computeDetail();
+  const byA=sumBy(det, d=>d.agency?d.agency.id:0, ['agApp','agWin','agTotal']);
+  let ah=`<div class="tablewrap"><table><tr><th>代理店</th><th class="r">応募フィー</th><th class="r">当選者フィー</th><th class="r">支払合計</th></tr>`;
+  let tA=0;
+  AG.agencies.forEach(a=>{ const r=byA[a.id]||{agApp:0,agWin:0,agTotal:0}; tA+=r.agTotal||0;
+    ah+=`<tr><td>${esc(a.name)}</td><td class="r">${yen(r.agApp)}</td><td class="r">${yen(r.agWin)}</td><td class="r"><b>${yen(r.agTotal)}</b></td></tr>`; });
+  ah+=`<tr style="background:#F4EFE0"><td><b>合計</b></td><td></td><td></td><td class="r"><b>${yen(tA)}</b></td></tr></table></div>`;
+  $('#rw-agency').innerHTML = AG.agencies.length?ah:'<div class="empty">代理店が未登録です</div>';
+  const byB=sumBy(det, d=>d.broker?d.broker.id:0, ['agApp','agWin','agTotal']);
+  let bh=`<div class="tablewrap"><table><tr><th>ブローカー</th><th>代理店</th><th class="r">応募フィー</th><th class="r">当選者フィー</th><th class="r">合計</th></tr>`;
+  AG.brokers.forEach(b=>{ const r=byB[b.id]||{agApp:0,agWin:0,agTotal:0}; const a=AG.agencies.find(x=>x.id===b.agency_id);
+    bh+=`<tr><td>${esc(b.name)}</td><td class="muted">${esc(a?a.name:'—')}</td><td class="r">${yen(r.agApp)}</td><td class="r">${yen(r.agWin)}</td><td class="r"><b>${yen(r.agTotal)}</b></td></tr>`; });
+  bh+='</table></div>';
+  $('#rw-broker').innerHTML = AG.brokers.length?bh:'<div class="empty">ブローカーが未登録です</div>';
+  let eh=`<div class="tablewrap"><table><tr><th>エンド</th><th>ブローカー</th><th class="r">参加報酬</th><th class="r">当選報酬</th><th class="r">合計</th></tr>`;
+  det.forEach(d=>{ eh+=`<tr><td>${esc(euName(d.u))}</td><td class="muted">${esc(d.broker?d.broker.name:'—')}</td>
+    <td class="r">${yen(d.euPart)}</td><td class="r">${yen(d.euWin)}</td><td class="r"><b>${yen(d.euTotal)}</b></td></tr>`; });
+  eh+='</table></div>';
+  $('#rw-enduser').innerHTML = det.length?eh:'<div class="empty">エンドユーザーが未登録です</div>';
+}
+function csvAgency(){
+  const det=computeDetail(); const byA=sumBy(det, d=>d.agency?d.agency.id:0, ['agApp','agWin','agTotal']);
+  const rows=[['代理店','応募フィー','当選者フィー','支払合計']];
+  AG.agencies.forEach(a=>{ const r=byA[a.id]||{}; rows.push([a.name, r.agApp||0, r.agWin||0, r.agTotal||0]); });
+  downloadCSV('代理店支払い.csv', rows);
+}
+function csvBroker(){
+  const det=computeDetail();
+  const rows=[['代理店','ブローカー','エンド','LINE名','代理店応募フィー','代理店当選者フィー','小計']];
+  det.forEach(d=>rows.push([d.agency?d.agency.name:'', d.broker?d.broker.name:'', d.u.real_name||'', d.u.line_name||'', d.agApp, d.agWin, d.agTotal]));
+  downloadCSV('ブローカー別明細.csv', rows);
+}
+function csvEndUser(){
+  const det=computeDetail();
+  const rows=[['エンド','LINE名','ブローカー','参加報酬','当選報酬','合計']];
+  det.forEach(d=>rows.push([d.u.real_name||'', d.u.line_name||'', d.broker?d.broker.name:'', d.euPart, d.euWin, d.euTotal]));
+  downloadCSV('エンド報酬.csv', rows);
+}
+function downloadCSV(name, rows){
+  const csv=rows.map(r=>r.map(c=>{ const s=(c==null?'':''+c).replace(/"/g,'""'); return /[",\n]/.test(s)?`"${s}"`:s; }).join(',')).join('\r\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); URL.revokeObjectURL(url);
+  toast('CSVを書き出しました');
+}
+
+/* ---------- restrict ---------- */
+function renderRestrict(){
+  $('#rdays').textContent=cfg().restriction_days;
+  const soonOnly=$('#rs-soon').checked;
+  const ty=todayYMD();
+  let rows=AG.wins.map(w=>{ const u=AG.endUsers.find(x=>x.id===w.end_user_id); const r=AgCalc.restriction(w,cfg(),ty); return {w,u,r}; })
+    .filter(x=>x.r).filter(x=>!x.r.released);
+  rows.sort((a,b)=>a.r.remaining-b.r.remaining);
+  if(soonOnly) rows=rows.filter(x=>x.r.soon);
+  const t=$('#rs-table');
+  if(!rows.length){ t.innerHTML=`<tr><td class="empty">${soonOnly?'7日以内に解除される制限はありません':'制限中の対象はいません'}</td></tr>`; return; }
+  let h=`<tr><th>エンド</th><th>起算日</th><th>解除予定日</th><th>残り日数</th><th>状態</th></tr>`;
+  rows.forEach(x=>{ h+=`<tr><td>${esc(x.u?euName(x.u):'ID'+x.w.end_user_id)}</td>
+    <td>${fmtDate(x.r.base)}<span class="muted"> (${x.w.store_entry_completed?'入店完了':'当選'})</span></td>
+    <td>${fmtDate(x.r.releaseDate)}</td><td class="r"><b>${x.r.remaining}日</b></td>
+    <td>${x.r.soon?'<span class="badge b-soon">まもなく解除</span>':'<span class="badge b-no">制限中</span>'}</td></tr>`; });
+  t.innerHTML=h;
+}
+
+/* ---------- dashboard ---------- */
+function renderDash(){
+  const det=computeDetail();
+  const totalAgency=det.reduce((s,d)=>s+d.agTotal,0);
+  const totalEU=det.reduce((s,d)=>s+d.euTotal,0);
+  const pend=AgCalc.pendingWins(AG.wins).length;
+  const ty=todayYMD();
+  const soon=AG.wins.map(w=>AgCalc.restriction(w,cfg(),ty)).filter(r=>r&&r.soon).length;
+  const kpi=[
+    ['代理店数',AG.agencies.length,''],['ブローカー数',AG.brokers.length,''],['エンドユーザー',AG.endUsers.length,''],
+    ['弊社→代理店 支払見込',yen(totalAgency),'gold'],['エンド報酬 合計',yen(totalEU),'gold'],
+    ['保留（入店未完了）',pend+'件',''],['まもなく解除',soon+'件','']
+  ];
+  $('#dash-kpis').innerHTML=kpi.map(k=>`<div class="kpi"><div class="lab">${k[0]}</div><div class="val ${k[2]}">${k[1]}</div></div>`).join('');
+  const byA=sumBy(det,d=>d.agency?d.agency.id:0,['agApp','agWin','agTotal']);
+  let ah=`<div class="tablewrap"><table><tr><th>代理店</th><th class="r">応募フィー</th><th class="r">当選者フィー</th><th class="r">支払合計</th></tr>`;
+  AG.agencies.forEach(a=>{ const r=byA[a.id]||{}; ah+=`<tr><td>${esc(a.name)}</td><td class="r">${yen(r.agApp||0)}</td><td class="r">${yen(r.agWin||0)}</td><td class="r"><b>${yen(r.agTotal||0)}</b></td></tr>`; });
+  ah+='</table></div>';
+  $('#dash-agency').innerHTML = AG.agencies.length?ah:'<div class="empty">代理店が未登録です</div>';
+  const rows=AG.wins.map(w=>{const u=AG.endUsers.find(x=>x.id===w.end_user_id);const r=AgCalc.restriction(w,cfg(),ty);return{u,r,w};}).filter(x=>x.r&&x.r.soon).sort((a,b)=>a.r.remaining-b.r.remaining);
+  if(!rows.length){ $('#dash-soon').innerHTML='<div class="empty">7日以内に解除される制限はありません</div>'; }
+  else { $('#dash-soon').innerHTML=`<div class="tablewrap"><table><tr><th>エンド</th><th>解除予定日</th><th>残り</th></tr>`+
+    rows.map(x=>`<tr><td>${esc(x.u?euName(x.u):'—')}</td><td>${fmtDate(x.r.releaseDate)}</td><td class="r"><b>${x.r.remaining}日</b></td></tr>`).join('')+'</table></div>'; }
+}
+
+/* ---------- modal ---------- */
+function openModal(title, body, onSave){
+  $('#modal').innerHTML=`<h3>${title}</h3>${body}<div class="acts">
+    <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn" id="modal-save">保存</button></div>`;
+  $('#modal-save').onclick=async()=>{ const r=await onSave(); if(r!==false) closeModal(); };
+  $('#modal-bg').style.display='flex';
+}
+function confirmModal(msg, onYes){
+  $('#modal').innerHTML=`<h3>確認</h3><p>${msg}</p><div class="acts">
+    <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+    <button class="btn danger" id="modal-save">実行</button></div>`;
+  $('#modal-save').onclick=async()=>{ await onYes(); closeModal(); };
+  $('#modal-bg').style.display='flex';
+}
+function closeModal(){ $('#modal-bg').style.display='none'; }
+$('#modal-bg').addEventListener('click',e=>{ if(e.target.id==='modal-bg') closeModal(); });
+
+/* ---------- nav ---------- */
+const TITLES={dash:'ダッシュボード',weekly:'週次入力',endusers:'エンドユーザー',orgs:'代理店・ブローカー',wins:'当選者一覧',rewards:'報酬・支払い',restrict:'制限管理'};
+let curSec='dash';
+document.querySelectorAll('#nav a').forEach(a=>a.addEventListener('click',()=>{
+  document.querySelectorAll('#nav a').forEach(x=>x.classList.remove('active'));
+  a.classList.add('active');
+  const s=a.dataset.sec; curSec=s;
+  document.querySelectorAll('section').forEach(x=>x.classList.remove('show'));
+  $('#sec-'+s).classList.add('show');
+  $('#sec-title').textContent=TITLES[s];
+  renderCurrent();
+}));
+function renderCurrent(){
+  if(curSec==='dash') renderDash();
+  else if(curSec==='weekly') renderWeekly();
+  else if(curSec==='endusers') renderEndUsers();
+  else if(curSec==='orgs') renderOrgs();
+  else if(curSec==='wins') renderWins();
+  else if(curSec==='rewards') renderRewards();
+  else if(curSec==='restrict') renderRestrict();
+}
+
+/* ---------- init ---------- */
+async function reload(){ await loadAll(); buildMWSelectors(); renderCurrent(); }
+async function initApp(){
+  SB = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data:{ session } } = await SB.auth.getSession();
+  if(!session){ $('#login-overlay').style.display='flex'; return; }
+  CURRENT_EMAIL = session.user?.email || '';
+  $('#user-email').textContent = CURRENT_EMAIL + (isAdmin()?' 👑':'');
+  $('#login-overlay').style.display='none';
+  document.querySelector('.app').style.visibility='visible';
+  await loadAll();
+  buildMWSelectors();
+  renderDash();
+  toast('☁ データを読み込みました');
+}
+initApp();
+</script>
