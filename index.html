@@ -112,6 +112,18 @@
   #toast.show{opacity:1}
   .empty{padding:26px;text-align:center;color:var(--muted)}
   .pill{font-size:11px;background:var(--green);color:#fff;padding:1px 8px;border-radius:20px}
+  /* ---------- segment ---------- */
+  .seg-chips{display:flex;flex-wrap:wrap;gap:7px}
+  .seg-chip{font-size:12px;padding:5px 12px;border-radius:20px;border:1px solid var(--line);
+      background:#fff;color:var(--ink);cursor:pointer;font-weight:600}
+  .seg-chip:hover{border-color:var(--gold)}
+  .seg-chip.on{background:var(--green);color:#fff;border-color:var(--green)}
+  .seg-filters{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:900px){.seg-filters{grid-template-columns:repeat(2,1fr)}}
+  .seg-filters .fld label{display:block;font-size:11px;color:var(--muted);font-weight:700;margin-bottom:4px}
+  .seg-filters .fld select,.seg-filters .fld input{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .seg-linebox{white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;
+      background:var(--ivory);border:1px solid var(--line);border-radius:8px;padding:10px;font-family:monospace}
 </style>
 
 <!-- ===================== LOGIN ===================== -->
@@ -143,6 +155,7 @@
       <a data-sec="wins"><span class="ic">🏆</span>当選者一覧</a>
       <a data-sec="rewards"><span class="ic">💰</span>報酬・支払い</a>
       <a data-sec="restrict"><span class="ic">⏳</span>制限管理</a>
+      <a data-sec="segment"><span class="ic">🎯</span>セグメント抽出</a>
     </nav>
     <div class="foot">
       <div class="email" id="user-email"></div>
@@ -251,6 +264,53 @@
           <span class="muted" style="font-size:12px">起算：入店完了日（なければ当選日）＋ <b id="rdays">180</b> 日</span>
         </div>
         <div class="tablewrap"><table id="rs-table"></table></div>
+      </section>
+
+      <!-- SEGMENT -->
+      <section id="sec-segment">
+        <h2 class="sec">🎯 セグメント抽出</h2>
+        <p class="muted" style="font-size:12px;margin:-6px 0 14px">AND条件で絞り込み → LINE一斉送信リストを作成（読み取り専用・出力のみ）。稼働率の基準は「登録済みの最新週」です。</p>
+
+        <div class="card">
+          <div class="h">よく使う抽出パターン</div>
+          <div class="seg-chips" id="seg-presets"></div>
+        </div>
+
+        <div class="card">
+          <div class="h" style="justify-content:space-between"><span>AND条件で絞り込み</span>
+            <button class="btn ghost sm" onclick="resetSegFilters()">リセット</button></div>
+          <div class="seg-filters">
+            <div class="fld"><label>状態</label><select id="sf-status" onchange="runSegment()">
+              <option value="">すべて</option><option>応募中</option><option>制限中</option><option>2本目応募中</option><option>完了</option><option>停止</option></select></div>
+            <div class="fld"><label>当選回数</label><select id="sf-wins" onchange="runSegment()">
+              <option value="">すべて</option><option value="0">未当選</option><option value="1">1回当選</option><option value="2+">2回以上当選</option></select></div>
+            <div class="fld"><label>購入制限</label><select id="sf-restrict" onchange="runSegment()">
+              <option value="">すべて</option><option value="restricted">制限中のみ</option><option value="ended">制限明けのみ</option><option value="free">制限なしのみ</option></select></div>
+            <div class="fld"><label>稼働</label><select id="sf-active" onchange="runSegment()">
+              <option value="">すべて</option><option value="active">アクティブのみ</option><option value="inactive">非アクティブのみ</option></select></div>
+            <div class="fld"><label>代理店</label><select id="sf-agency" onchange="runSegment()"></select></div>
+            <div class="fld"><label>ブローカー</label><select id="sf-broker" onchange="runSegment()"></select></div>
+            <div class="fld"><label>備考キーワード</label><input id="sf-note" placeholder="部分一致" oninput="runSegment()"></div>
+            <div class="fld"><label>名前・LINE名</label><input id="sf-name" placeholder="部分一致" oninput="runSegment()"></div>
+          </div>
+        </div>
+
+        <div class="grid kpis" id="seg-kpis" style="margin-bottom:18px"></div>
+
+        <div class="card">
+          <div class="h" style="justify-content:space-between">
+            <span>抽出結果 <b id="seg-count" style="color:var(--gold-dark)">0</b> 名</span>
+            <span style="display:flex;gap:8px">
+              <button class="btn sm" onclick="copyLineIds()">📋 LINE名コピー</button>
+              <button class="btn gold sm" onclick="exportSegCSV()">📥 CSV出力</button></span>
+          </div>
+          <div class="seg-linebox" id="seg-linebox"></div>
+        </div>
+
+        <div class="card">
+          <div class="h">メンバー詳細</div>
+          <div class="tablewrap"><table id="seg-table"></table></div>
+        </div>
       </section>
 
     </div>
@@ -714,7 +774,7 @@ function closeModal(){ $('#modal-bg').style.display='none'; }
 $('#modal-bg').addEventListener('click',e=>{ if(e.target.id==='modal-bg') closeModal(); });
 
 /* ---------- nav ---------- */
-const TITLES={dash:'ダッシュボード',weekly:'週次入力',endusers:'エンドユーザー',orgs:'代理店・ブローカー',wins:'当選者一覧',rewards:'報酬・支払い',restrict:'制限管理'};
+const TITLES={dash:'ダッシュボード',weekly:'週次入力',endusers:'エンドユーザー',orgs:'代理店・ブローカー',wins:'当選者一覧',rewards:'報酬・支払い',restrict:'制限管理',segment:'セグメント抽出'};
 let curSec='dash';
 document.querySelectorAll('#nav a').forEach(a=>a.addEventListener('click',()=>{
   document.querySelectorAll('#nav a').forEach(x=>x.classList.remove('active'));
@@ -733,6 +793,160 @@ function renderCurrent(){
   else if(curSec==='wins') renderWins();
   else if(curSec==='rewards') renderRewards();
   else if(curSec==='restrict') renderRestrict();
+  else if(curSec==='segment') renderSegment();
+}
+
+/* ---------- segment (セグメント抽出・表示専用/出力のみ・DB書き込みなし) ---------- */
+const ACTIVE_RECENT_WEEKS = 4; // 稼働基準：登録済み最新週を含む直近4週以内に週次入力があればアクティブ
+let _segPreset = 'all';
+let _segResult = [];
+
+// 登録済み (month,week) を昇順で序数化（available_months はソートしてから展開）
+function segWeekOrder(){
+  const ms=(cfg().available_months||[]).slice().sort((a,b)=>a-b);
+  const ord=new Map(); let i=0;
+  ms.forEach(m=>{ weeksOf(m).slice().sort((a,b)=>a-b).forEach(w=>{ ord.set(m+'-'+w, i++); }); });
+  return ord;
+}
+// 稼働率の基準週＝登録済み最新週の序数（cur ポインタ非依存で数字が安定）
+function segLatestOrd(ord){ return ord.size ? ord.size-1 : -1; }
+// エンドユーザーの最終稼働（応募 or 結果の店舗数>0 がある直近週）。設定外の古い週(序数なし)はスキップ
+function euLastActivity(euId, ord){
+  let best=-1, bestKey=null;
+  AG.weekly.forEach(r=>{
+    if(r.end_user_id!==euId) return;
+    if(((r.lottery_stores||0)>0)||((r.result_stores||0)>0)){
+      const o=ord.get(r.month+'-'+r.week);
+      if(o!==undefined && o>best){ best=o; bestKey=r.month+'月'+r.week+'週'; }
+    }
+  });
+  return {ord:best, label: best<0?'—':bestKey};
+}
+function euWinCount(euId){ return AG.wins.filter(w=>w.end_user_id===euId).length; }
+function euHasEntered(euId){ return AG.wins.some(w=>w.end_user_id===euId && w.store_entry_completed); }
+function segToday(){ const d=new Date(), p=n=>String(n).padStart(2,'0');
+  return ''+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate()); }
+// 購入制限：制限中 / 制限明け / 制限なし（AgCalc.restriction、当選日も入店日も無い当選=nullは除外）
+function euRestrictState(euId, today){
+  const rs=AG.wins.filter(w=>w.end_user_id===euId).map(w=>AgCalc.restriction(w,cfg(),today)).filter(r=>r);
+  if(!rs.length) return 'free';
+  return rs.some(r=>!r.released) ? 'restricted' : 'ended';
+}
+function euRestrictDaysLeft(euId, today){
+  const rs=AG.wins.filter(w=>w.end_user_id===euId).map(w=>AgCalc.restriction(w,cfg(),today)).filter(r=>r && !r.released);
+  return rs.length ? Math.min.apply(null, rs.map(r=>r.remaining)) : null;
+}
+function agencyOfBroker(brokerId){ const b=AG.brokers.find(x=>x.id===brokerId); return b?b.agency_id:null; }
+
+const SEG_PRESETS={
+  all:              {label:'全員', fn:()=>true},
+  active_all:       {label:'アクティブ全員', fn:c=>c.active},
+  inactive_all:     {label:'非アクティブ全員', fn:c=>!c.active},
+  applying:         {label:'応募中', fn:c=>c.u.status==='応募中'},
+  second:           {label:'2本目応募中', fn:c=>c.u.status==='2本目応募中'},
+  done:             {label:'完了', fn:c=>c.u.status==='完了'},
+  stopped:          {label:'停止', fn:c=>c.u.status==='停止'},
+  unwon:            {label:'未当選', fn:c=>c.wins===0},
+  won_any:          {label:'当選あり', fn:c=>c.wins>=1},
+  entered:          {label:'買付成功済み', fn:c=>c.entered},
+  restricted:       {label:'制限中（全員）', fn:c=>c.restrict==='restricted'},
+  restriction_ended:{label:'制限明け', fn:c=>c.restrict==='ended'},
+  restriction_soon: {label:'まもなく解除(7日以内)', fn:c=>c.daysLeft!=null && c.daysLeft<=7},
+  churn:            {label:'離脱疑い（活動歴あり×非アクティブ×未当選）', fn:c=>c.lastOrd>=0 && !c.active && c.wins===0},
+};
+function ensureSegUI(){
+  const box=$('#seg-presets');
+  if(box && !box.dataset.built){
+    box.innerHTML=Object.keys(SEG_PRESETS).map(k=>
+      `<div class="seg-chip${k===_segPreset?' on':''}" data-k="${k}" onclick="applyPreset('${k}')">${esc(SEG_PRESETS[k].label)}</div>`).join('');
+    box.dataset.built='1';
+  }
+  const ag=$('#sf-agency'); if(ag){ const v=ag.value; ag.innerHTML='<option value="">全代理店</option>'+AG.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join(''); ag.value=v; }
+  const bk=$('#sf-broker'); if(bk){ const v=bk.value; bk.innerHTML='<option value="">全ブローカー</option>'+AG.brokers.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join(''); bk.value=v; }
+}
+function applyPreset(k){
+  _segPreset=k;
+  document.querySelectorAll('#seg-presets .seg-chip').forEach(c=>c.classList.toggle('on', c.dataset.k===k));
+  ['sf-status','sf-wins','sf-restrict','sf-active','sf-agency','sf-broker','sf-note','sf-name'].forEach(id=>{const e=$('#'+id); if(e) e.value='';});
+  runSegment();
+}
+function resetSegFilters(){ applyPreset('all'); }
+function segRows(){
+  const ord=segWeekOrder(), latest=segLatestOrd(ord), today=segToday();
+  return AG.endUsers.map(u=>{
+    const la=euLastActivity(u.id, ord);
+    return { u, wins:euWinCount(u.id), entered:euHasEntered(u.id),
+      restrict:euRestrictState(u.id, today), daysLeft:euRestrictDaysLeft(u.id, today),
+      lastOrd:la.ord, lastLabel:la.label,
+      active: la.ord>=0 && (latest-la.ord) < ACTIVE_RECENT_WEEKS,
+      agencyId: agencyOfBroker(u.broker_id) };
+  });
+}
+function runSegment(){
+  ensureSegUI();
+  const fStatus=$('#sf-status')?.value||'', fWins=$('#sf-wins')?.value||'', fRes=$('#sf-restrict')?.value||'',
+        fAct=$('#sf-active')?.value||'', fAg=$('#sf-agency')?.value||'', fBk=$('#sf-broker')?.value||'',
+        fNote=($('#sf-note')?.value||'').toLowerCase(), fName=($('#sf-name')?.value||'').toLowerCase();
+  const presetFn=(SEG_PRESETS[_segPreset]||SEG_PRESETS.all).fn;
+  const rows=segRows().filter(c=>{
+    if(!presetFn(c)) return false;
+    if(fStatus && c.u.status!==fStatus) return false;
+    if(fWins==='0' && c.wins!==0) return false;
+    if(fWins==='1' && c.wins!==1) return false;
+    if(fWins==='2+' && c.wins<2) return false;
+    if(fRes && c.restrict!==fRes) return false;
+    if(fAct==='active' && !c.active) return false;
+    if(fAct==='inactive' && c.active) return false;
+    if(fAg && String(c.agencyId)!==fAg) return false;
+    if(fBk && String(c.u.broker_id)!==fBk) return false;
+    if(fNote && !((c.u.note||'').toLowerCase().includes(fNote))) return false;
+    if(fName && !((''+(c.u.line_name||'')+' '+(c.u.real_name||'')).toLowerCase().includes(fName))) return false;
+    return true;
+  });
+  _segResult=rows;
+  const n=rows.length, act=rows.filter(r=>r.active).length, res=rows.filter(r=>r.restrict==='restricted').length,
+        won=rows.filter(r=>r.wins>=1).length, ent=rows.filter(r=>r.entered).length, rate=n?Math.round(act/n*100):0;
+  $('#seg-kpis').innerHTML=[['抽出人数',n,''],['稼働率',rate+'%','gold'],['アクティブ',act,''],
+    ['制限中',res,''],['当選済み',won,''],['買付成功',ent,'']]
+    .map(k=>`<div class="kpi"><div class="lab">${k[0]}</div><div class="val ${k[2]}">${k[1]}</div></div>`).join('');
+  $('#seg-count').textContent=n;
+  $('#seg-linebox').textContent=rows.map(r=>euName(r.u)).join('\n')||'（該当なし）';
+  const winB=w=>w===0?'<span class="badge b-no">未当選</span>':`<span class="badge b-win">${w}回当選</span>`;
+  const resB=r=>r==='restricted'?'<span class="badge b-soon">制限中</span>':r==='ended'?'<span class="badge b-ok">制限明け</span>':'<span class="badge b-no">なし</span>';
+  $('#seg-table').innerHTML=
+    `<tr><th>LINE名</th><th>氏名</th><th>代理店</th><th>ブローカー</th><th>状態</th><th>当選</th><th>制限</th><th>稼働</th><th>最終稼働</th><th>備考</th></tr>`+
+    (rows.length?rows.map(r=>{ const ag=AG.agencies.find(a=>a.id===r.agencyId);
+      return `<tr><td>${esc(r.u.line_name)||'—'}</td><td>${esc(r.u.real_name)||'—'}</td>`+
+        `<td class="muted">${ag?esc(ag.name):'—'}</td><td class="muted">${esc(brokerName(r.u.broker_id))}</td>`+
+        `<td><span class="badge b-no">${esc(r.u.status)||'—'}</span></td>`+
+        `<td>${winB(r.wins)}</td><td>${resB(r.restrict)}</td>`+
+        `<td>${r.active?'<span class="badge b-ok">アクティブ</span>':'<span class="badge b-no">非アクティブ</span>'}</td>`+
+        `<td class="muted">${esc(r.lastLabel)}</td><td class="muted">${esc(r.u.note)||''}</td></tr>`;
+    }).join(''):`<tr><td colspan="10" class="empty">該当なし</td></tr>`);
+}
+function renderSegment(){ runSegment(); }
+function copyLineIds(){
+  const txt=_segResult.map(r=>euName(r.u)).join('\n');
+  if(!txt){ toast('対象がありません'); return; }
+  const done=()=>toast('LINE名をコピーしました（'+_segResult.length+'件）');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(()=>segCopyFallback(txt,done));
+  } else segCopyFallback(txt,done);
+}
+function segCopyFallback(txt,done){
+  const ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ toast('コピーに失敗しました'); }
+  document.body.removeChild(ta);
+}
+function exportSegCSV(){
+  if(_segResult.length===0){ toast('対象がありません'); return; }
+  const rows=[['LINE名','氏名','代理店','ブローカー','状態','当選回数','購入制限','稼働','最終稼働','備考']];
+  _segResult.forEach(r=>{ const ag=AG.agencies.find(a=>a.id===r.agencyId);
+    rows.push([r.u.line_name||'', r.u.real_name||'', ag?ag.name:'', brokerName(r.u.broker_id), r.u.status||'',
+      r.wins, r.restrict==='restricted'?'制限中':r.restrict==='ended'?'制限明け':'なし',
+      r.active?'アクティブ':'非アクティブ', r.lastLabel, r.u.note||'']); });
+  downloadCSV('セグメント抽出.csv', rows);
 }
 
 /* ---------- init ---------- */
