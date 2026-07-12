@@ -32,8 +32,9 @@
   function weekLE(aM, aW, bM, bW) { return aM < bM || (aM === bM && aW <= bW); }
 
   function conditionMet(row, cfg) {
+    // 抽選は「必要店舗数以上」、結果は「結果SS確認（1タップ・真偽）」で達成
     return (row.lottery_stores || 0) >= cfg.required_stores &&
-           (row.result_stores  || 0) >= cfg.required_stores;
+           row.result_ss === true;
   }
 
   // そのエンドユーザーに (month,week) 以前（当該週含む）の当選があるか
@@ -144,7 +145,9 @@
     }
 
     endUsers.forEach(function (u) {
-      var brokerId = u.broker_id, agencyId = agencyOfBroker[brokerId];
+      // 代理店直（broker なし）は agency_id で直接代理店に紐づく。broker があればそちら優先。
+      var brokerId = u.broker_id || null;
+      var agencyId = brokerId ? agencyOfBroker[brokerId] : (u.agency_id || null);
       var euPart = 0, euWin = 0, agAppFee = 0, agWinFee = 0;
 
       months.forEach(function (m) {
@@ -156,8 +159,9 @@
       });
 
       perEndUser[u.id] = { participation: euPart, winReward: euWin, total: euPart + euWin };
-      add(perBroker, brokerId, 'appFee', agAppFee); add(perBroker, brokerId, 'winFee', agWinFee);
-      add(perAgency, agencyId, 'appFee', agAppFee); add(perAgency, agencyId, 'winFee', agWinFee);
+      // ブローカーは代理店直ユーザーには存在しない → null キーを作らない
+      if (brokerId != null) { add(perBroker, brokerId, 'appFee', agAppFee); add(perBroker, brokerId, 'winFee', agWinFee); }
+      if (agencyId != null) { add(perAgency, agencyId, 'appFee', agAppFee); add(perAgency, agencyId, 'winFee', agWinFee); }
     });
 
     return { perEndUser: perEndUser, perBroker: perBroker, perAgency: perAgency };

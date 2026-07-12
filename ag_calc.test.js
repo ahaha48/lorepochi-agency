@@ -16,6 +16,12 @@ function eq(actual, expected, label) {
 
 var cfg = C.DEFAULT_CONFIG;
 
+// ---- 達成条件: 抽選>=必要店舗数 ＆ 結果SS✓（1タップ真偽）----
+console.log('達成条件（抽選店舗数 ＆ 結果SS真偽）');
+eq(C.conditionMet({ lottery_stores: 5, result_ss: true },  cfg), true,  '抽選5 ＆ 結果SS✓ → 達成');
+eq(C.conditionMet({ lottery_stores: 5, result_ss: false }, cfg), false, '抽選5でも 結果SS✗ → 未達成');
+eq(C.conditionMet({ lottery_stores: 3, result_ss: true },  cfg), false, '結果SS✓でも 抽選不足 → 未達成');
+
 // ---- シナリオ1: 当選なし（基本の週次・ボーナス集計）----
 console.log('シナリオ1: 当選なし');
 var base = {
@@ -25,15 +31,15 @@ var base = {
   weeksPerMonth: { 1: [1, 2, 3, 4] },
   weekly: [
     // U100: 全週達成
-    { month: 1, week: 1, end_user_id: 100, lottery_stores: 5, result_stores: 5 },
-    { month: 1, week: 2, end_user_id: 100, lottery_stores: 5, result_stores: 5 },
-    { month: 1, week: 3, end_user_id: 100, lottery_stores: 5, result_stores: 5 },
-    { month: 1, week: 4, end_user_id: 100, lottery_stores: 5, result_stores: 5 },
+    { month: 1, week: 1, end_user_id: 100, lottery_stores: 5, result_ss: true },
+    { month: 1, week: 2, end_user_id: 100, lottery_stores: 5, result_ss: true },
+    { month: 1, week: 3, end_user_id: 100, lottery_stores: 5, result_ss: true },
+    { month: 1, week: 4, end_user_id: 100, lottery_stores: 5, result_ss: true },
     // U101: 第2週だけ抽選3店舗で未達成
-    { month: 1, week: 1, end_user_id: 101, lottery_stores: 5, result_stores: 5 },
-    { month: 1, week: 2, end_user_id: 101, lottery_stores: 3, result_stores: 5 },
-    { month: 1, week: 3, end_user_id: 101, lottery_stores: 5, result_stores: 5 },
-    { month: 1, week: 4, end_user_id: 101, lottery_stores: 5, result_stores: 5 },
+    { month: 1, week: 1, end_user_id: 101, lottery_stores: 5, result_ss: true },
+    { month: 1, week: 2, end_user_id: 101, lottery_stores: 3, result_ss: true },
+    { month: 1, week: 3, end_user_id: 101, lottery_stores: 5, result_ss: true },
+    { month: 1, week: 4, end_user_id: 101, lottery_stores: 5, result_ss: true },
   ],
   wins: [],
 };
@@ -59,7 +65,7 @@ s2.weeksPerMonth = { 1: [1,2,3,4], 2: [1,2,3,4] };
 s2.wins = [{ id: 1, end_user_id: 100, won_date: '20260210', shop: '銀座', month: 2, week: 1,
              store_entry_completed: true, store_entry_date: '20260215', purchase_incentive: 5000 }];
 // 月2の週次（当選週）
-s2.weekly.push({ month: 2, week: 1, end_user_id: 100, lottery_stores: 5, result_stores: 5 });
+s2.weekly.push({ month: 2, week: 1, end_user_id: 100, lottery_stores: 5, result_ss: true });
 
 // ★R1: 当選が後から入っても、月1（当選前）の報酬は 3000 のまま消えない
 var p100m1 = C.endUserMonthlyParticipation(100, 1, s2.weekly, s2.wins, [1,2,3,4], cfg);
@@ -67,7 +73,7 @@ eq(p100m1.total, 3000, '★R1: 当選後の再計算でも月1参加報酬は300
 eq(C.agencyMonthlyAppFee(100, 1, s2.weekly, s2.wins, cfg).total, 4000, '★R1: 月1の代理店応募フィーも4000のまま');
 
 // 途中当選週（月2第1週）はフィーなし
-eq(C.feeApplies({ month: 2, week: 1, end_user_id: 100, lottery_stores: 5, result_stores: 5 }, s2.wins, cfg),
+eq(C.feeApplies({ month: 2, week: 1, end_user_id: 100, lottery_stores: 5, result_ss: true }, s2.wins, cfg),
    false, '途中当選週はフィー発生しない');
 var p100m2 = C.endUserMonthlyParticipation(100, 2, s2.weekly, s2.wins, [1,2,3,4], cfg);
 eq(p100m2.total, 0, '月2（当選週のみ提出）参加報酬 = 0');
@@ -91,7 +97,7 @@ eq(cw3[1].agencyFee, 70000, '入店完了2件目 = 70,000');
 eq(cw3[1].endUserReward, 23000, '2件目エンド報酬 = 20,000 + 3,000 = 23,000');
 
 // 2本目フェーズ（当選後の週）は応募フィーなし
-eq(C.feeApplies({ month: 3, week: 1, end_user_id: 100, lottery_stores: 5, result_stores: 5 }, s3.wins, cfg),
+eq(C.feeApplies({ month: 3, week: 1, end_user_id: 100, lottery_stores: 5, result_ss: true }, s3.wins, cfg),
    false, '当選後（2本目フェーズ）の週は応募フィーなし');
 
 // ---- シナリオ4: 制限（解除期間）----
@@ -105,6 +111,35 @@ var soonBase = C.fmtYMD(C.addDays(C.parseYMD('20260708'), 3 - cfg.restriction_da
 var r2 = C.restriction({ store_entry_completed: true, store_entry_date: soonBase, won_date: soonBase }, cfg, '20260708');
 eq(r2.remaining, 3, '合成ケース: 残り3日');
 eq(r2.soon, true, '残り7日以内 → まもなく解除 = true');
+
+// ---- シナリオ5: 代理店直エンドユーザー（ブローカーなし）を含む集計 ----
+console.log('シナリオ5: 代理店直（ブローカーなし）を含む集計');
+function metRow(m, wk, eu) { return { month: m, week: wk, end_user_id: eu, lottery_stores: 5, result_ss: true }; }
+var s5 = {
+  agencies: [{ id: 1, name: 'A' }, { id: 2, name: 'C' }],
+  brokers:  [{ id: 10, agency_id: 1, name: 'B' }],
+  endUsers: [
+    { id: 100, broker_id: 10,   agency_id: null },  // ブローカーB経由（代理店A配下）
+    { id: 200, broker_id: null, agency_id: 1 },      // 代理店A直（ブローカーなし）
+    { id: 300, broker_id: null, agency_id: 2 },      // 代理店C直（ブローカーなし）
+  ],
+  weeksPerMonth: { 1: [1, 2, 3, 4] },
+  weekly: [
+    metRow(1,1,100), metRow(1,2,100), metRow(1,3,100), metRow(1,4,100),
+    metRow(1,1,200), metRow(1,2,200), metRow(1,3,200), metRow(1,4,200),
+    metRow(1,1,300), metRow(1,2,300), metRow(1,3,300), metRow(1,4,300),
+  ],
+  wins: [],
+};
+var agg5 = C.aggregate(s5, cfg);
+// 各ユーザーの代理店応募フィー = 1000 × 4週 = 4000
+eq(agg5.perBroker[10], { appFee: 4000, winFee: 0, total: 4000 }, 'ブローカーB = 経由のU100分のみ 4000');
+eq(agg5.perAgency[1],  { appFee: 8000, winFee: 0, total: 8000 }, '代理店A = 経由U100 + 直U200 = 8000（直分が消えない）');
+eq(agg5.perAgency[2],  { appFee: 4000, winFee: 0, total: 4000 }, '代理店C = 直U300のみ = 4000');
+eq(Object.keys(agg5.perBroker).length, 1, 'perBroker はブローカー1件のみ（代理店直でキーが増えない）');
+eq(agg5.perBroker['null'], undefined, 'perBroker に "null" キーが作られない');
+eq(agg5.perBroker['undefined'], undefined, 'perBroker に "undefined" キーが作られない');
+eq(agg5.perEndUser[200].total, 3000, '代理店直U200 の参加報酬も通常どおり 3000');
 
 console.log('\n結果: ' + pass + ' 件成功 / ' + fail + ' 件失敗');
 process.exit(fail === 0 ? 0 : 1);

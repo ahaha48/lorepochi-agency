@@ -27,14 +27,18 @@ CREATE TABLE IF NOT EXISTS ag_brokers (
 
 -- 3. エンドユーザー（応募者）
 --    ※ 銀行口座は機微情報のため、この表には持たず ag_bank_accounts（管理者専用）に格納
+--    ※ 「ブローカー経由(broker_id)」か「代理店直(agency_id)」の“ちょうど一方”だけを持つ（XOR）
 CREATE TABLE IF NOT EXISTS ag_end_users (
   id         BIGINT PRIMARY KEY,
-  broker_id  BIGINT NOT NULL REFERENCES ag_brokers(id) ON DELETE CASCADE,
+  broker_id  BIGINT REFERENCES ag_brokers(id)  ON DELETE CASCADE,  -- 代理店直では NULL
+  agency_id  BIGINT REFERENCES ag_agencies(id) ON DELETE CASCADE,  -- ブローカー経由では NULL
   line_name  TEXT,                         -- 公式LINE名
   real_name  TEXT,                         -- 照合用の本名（機微情報）
   status     TEXT DEFAULT '応募中',
   note       TEXT DEFAULT '',
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT ag_end_users_broker_xor_agency
+    CHECK ((broker_id IS NOT NULL) <> (agency_id IS NOT NULL))
 );
 
 -- 4. 週次入力（店舗数ベース・毎週水曜締め）
@@ -43,7 +47,7 @@ CREATE TABLE IF NOT EXISTS ag_weekly (
   week           INTEGER NOT NULL,         -- 月内の週(1-4/5)
   end_user_id    BIGINT NOT NULL REFERENCES ag_end_users(id) ON DELETE CASCADE,
   lottery_stores INTEGER DEFAULT 0,        -- 抽選SSを確認できた店舗数
-  result_stores  INTEGER DEFAULT 0,        -- 結果SSを確認できた店舗数
+  result_ss      BOOLEAN DEFAULT FALSE,    -- 結果SS確認（1タップ・真偽／1期生ロレポチと同方式）
   note           TEXT DEFAULT '',
   PRIMARY KEY (month, week, end_user_id)
 );
