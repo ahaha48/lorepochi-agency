@@ -219,6 +219,7 @@
         <h2 class="sec">👥 エンドユーザー管理</h2>
         <div class="toolbar">
           <button class="btn" onclick="editEndUser()">＋ エンドユーザー追加</button>
+          <button class="btn ghost" onclick="openBulkAdd()">📋 貼り付けで一括追加</button>
           <select id="eu-filter" onchange="renderEndUsers()"></select>
           <label class="muted" style="font-size:12px"><input type="checkbox" id="eu-reveal" onchange="renderEndUsers()"> 口座情報を表示（🔒管理者のみ）</label>
         </div>
@@ -493,10 +494,11 @@ function renderEndUsers(){
   let list=AG.endUsers.filter(u=> fv==='' ? true : fv==='__direct' ? !u.broker_id : u.broker_id===+fv);
   const t=$('#eu-table');
   if(!list.length){ t.innerHTML=`<tr><td class="empty">まだ登録がありません</td></tr>`; return; }
-  let h=`<tr><th>LINE名</th><th>本名</th><th>所属</th><th>口座情報</th><th>状態</th><th>操作</th></tr>`;
+  let h=`<tr><th>LINE名</th><th>本名</th><th>所属</th><th>備考</th><th>口座情報</th><th>状態</th><th>操作</th></tr>`;
   list.forEach(u=>{
     h+=`<tr><td>${esc(u.line_name)||'—'}</td><td>${esc(u.real_name)||'—'}</td>
       <td class="muted">${esc(orgLabel(u))}</td>
+      <td class="muted" style="font-size:11px;white-space:normal;max-width:220px">${esc(u.note)||''}</td>
       <td class="pii">${isAdmin()?(reveal?(esc(bankOf('end_user',u.id))||'—'):mask(bankOf('end_user',u.id))):'🔒'}</td>
       <td><span class="badge b-no">${esc(u.status)||'—'}</span></td>
       <td class="rowbtns"><button class="btn sm ghost" onclick="editEndUser(${u.id})">編集</button>
@@ -563,6 +565,111 @@ async function delEndUser(id){
     if(isAdmin()) await SB.from('ag_bank_accounts').delete().eq('owner_type','end_user').eq('owner_id',id);
     await reload(); toast('削除しました');
   });
+}
+
+/* ---------- 貼り付け一括追加（LINE返信からまとめて登録） ---------- */
+let _bulkRows = [];
+function bulkKey(ln, rn){ return (''+(ln||'')).trim()+'|'+(''+(rn||'')).trim(); }
+// 先頭の採番(①/1.)・短いラベル(在住：)を除去。※LINE名には使わない（記号込みの表示名を保持）
+function bulkStrip(s){
+  s = (''+s).replace(/\r/g,'').trim();
+  s = s.replace(/^[\s　]*[①-⑳0-9０-９]+[\s　]*[.．)）。、，]?[\s　]*/,'');
+  s = s.replace(/^[^：:]{1,8}[：:][\s　]*/,'');
+  return s.trim();
+}
+// 年齢は数字のみ抽出（全角→半角）
+function bulkAge(s){
+  const half=(''+s).replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0));
+  const m=half.match(/\d+/); return m?m[0]:half.trim();
+}
+function openBulkAdd(){
+  const orgOpts =
+    AG.agencies.map(a=>`<option value="a:${a.id}">🏢 ${esc(a.name)}（代理店直）</option>`).join('')
+    + AG.brokers.map(b=>`<option value="b:${b.id}">${esc(b.name)}（ブローカー経由）</option>`).join('')
+    + `<option value="new">＋ 新しい代理店を作成…</option>`;
+  const ph = ['あおい','長崎県','TMサロン','結城葵','25','','（次の人も同じ5行で…）'].join('\n');
+  $('#modal').innerHTML = `<h3>📋 貼り付けで一括追加</h3>
+    <div class="f"><label>所属先（貼り付けた全員をこの所属で登録）</label>
+      <select id="bulk-org" onchange="bulkOrgToggle()">${orgOpts}</select></div>
+    <div class="f" id="bulk-newname-wrap" style="display:none"><label>新しい代理店の名前</label>
+      <input id="bulk-newname" placeholder="例：TMサロン"></div>
+    <div class="f"><label>LINEの返信を貼り付け（1人5行・人と人の間は空行）</label>
+      <textarea id="bulk-text" rows="9" placeholder="${ph}"></textarea>
+      <div class="hint">1行目=LINE名／2=在住地域／3=紹介者／4=本名／5=年齢。在住地域・年齢は「備考」に保存されます。</div></div>
+    <div id="bulk-preview"></div>
+    <div class="acts">
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="bulkParse()">解析してプレビュー</button>
+      <button class="btn gold" id="bulk-commit" style="display:none" onclick="bulkCommit()">登録</button>
+    </div>`;
+  $('#bulk-org').value = AG.agencies.length ? ('a:'+AG.agencies[0].id) : 'new';
+  $('#modal-bg').style.display='flex';
+  bulkOrgToggle();
+}
+function bulkOrgToggle(){
+  const v=$('#bulk-org')?$('#bulk-org').value:'';
+  if($('#bulk-newname-wrap')) $('#bulk-newname-wrap').style.display = (v==='new')?'':'none';
+}
+function bulkParse(){
+  const raw=($('#bulk-text').value||'').replace(/\r\n?/g,'\n');
+  // 空行でブロック分割（連続空行・先頭/末尾空行に強い）
+  const blocks=[]; let cur=[];
+  raw.split('\n').forEach(l=>{ if(l.trim()===''){ if(cur.length){blocks.push(cur);cur=[];} } else cur.push(l); });
+  if(cur.length) blocks.push(cur);
+  const existing=new Set(AG.endUsers.map(u=>bulkKey(u.line_name,u.real_name)));
+  const seen=new Set();
+  _bulkRows = blocks.map(lines=>{
+    if(lines.length!==5) return {error:`5行必要（${lines.length}行）`, raw:lines.join(' / ')};
+    const line_name=lines[0].trim();
+    const region=bulkStrip(lines[1]), referrer=bulkStrip(lines[2]),
+          real_name=bulkStrip(lines[3]), age=bulkAge(lines[4]);
+    const key=bulkKey(line_name, real_name);
+    let status='新規';
+    if(existing.has(key)||seen.has(key)) status='重複';
+    else seen.add(key);
+    return {line_name, region, referrer, real_name, age, status};
+  });
+  const ok=_bulkRows.filter(r=>r.status==='新規').length;
+  const dup=_bulkRows.filter(r=>r.status==='重複').length;
+  const err=_bulkRows.filter(r=>r.error).length;
+  let h=`<div class="tablewrap" style="margin-top:8px;max-height:220px">
+    <table><tr><th>LINE名</th><th>本名</th><th>在住</th><th>年齢</th><th>判定</th></tr>`;
+  _bulkRows.forEach(r=>{
+    if(r.error){ h+=`<tr style="background:#FCEEEE"><td colspan="5" class="muted">⚠ ${esc(r.error)}：${esc(r.raw)}</td></tr>`; return; }
+    const b=r.status==='新規'?'<span class="badge b-ok">新規</span>':'<span class="badge b-no">重複(スキップ)</span>';
+    h+=`<tr><td>${esc(r.line_name)}</td><td>${esc(r.real_name)}</td>
+      <td class="muted">${esc(r.region)}</td><td class="muted">${esc(r.age)}</td><td>${b}</td></tr>`;
+  });
+  h+=`</table></div><div class="hint" style="margin-top:6px">新規 <b>${ok}</b> 件／重複 ${dup} 件／エラー ${err} 件</div>`;
+  $('#bulk-preview').innerHTML=h;
+  $('#bulk-commit').style.display = ok>0 ? '' : 'none';
+}
+async function bulkCommit(){
+  const org=$('#bulk-org').value;
+  let broker_id=null, agency_id=null;
+  if(org==='new'){
+    const name=($('#bulk-newname').value||'').trim();
+    if(!name){ toast('新しい代理店の名前を入力してください'); return; }
+    const aid=Date.now();
+    const {error}=await SB.from('ag_agencies').upsert({id:aid,name,note:''});
+    if(error){ toast('代理店作成に失敗: '+error.message); return; }
+    agency_id=aid;
+  } else if(org.slice(0,2)==='a:'){ agency_id=+org.slice(2); }
+  else if(org.slice(0,2)==='b:'){ broker_id=+org.slice(2); }
+  const toAdd=_bulkRows.filter(r=>r.status==='新規');
+  if(!toAdd.length){ toast('登録できる新規行がありません'); return; }
+  const base=Date.now();
+  const payload=toAdd.map((r,i)=>({
+    id: base+i, broker_id, agency_id,
+    line_name:r.line_name, real_name:r.real_name, status:'応募中',
+    note:`在住:${r.region} 年齢:${r.age} 紹介:${r.referrer}`.replace(/\s+/g,' ').trim()
+  }));
+  const {error}=await SB.from('ag_end_users').insert(payload);
+  if(error){ toast('登録に失敗: '+error.message); return; }   // ★失敗時はモーダルを閉じない・成功扱いしない
+  const skipped=_bulkRows.length - toAdd.length;
+  closeModal();
+  await reload();
+  toast(`${toAdd.length}件を追加${skipped?`（${skipped}件スキップ）`:''}`);
 }
 
 /* ---------- orgs ---------- */
