@@ -22,7 +22,7 @@
     fee_enduser_monthly_bonus: 1000,
     cap_enduser_monthly: 3000,
     reward_enduser_win: 20000,
-    fee_agency_weekly: 1000,
+    fee_agency_weekly: 1250,
     fee_agency_win_1st: 50000,
     fee_agency_win_2nd: 70000, // 入店完了2件目以降（3件目以降も暫定同額。将来ルール要確認）
     restriction_days: 180,
@@ -87,7 +87,7 @@
     };
   }
 
-  // エンドユーザーの、ある月の代理店応募フィー（1000×feeweeks、上限/ボーナスなし）
+  // エンドユーザーの、ある月の代理店応募フィー（1250×feeweeks、上限/ボーナスなし）
   function agencyMonthlyAppFee(endUserId, month, weeklyRows, wins, cfg) {
     var rows = weeklyRows.filter(function (r) { return r.end_user_id === endUserId && r.month === month; });
     var n = rows.filter(function (r) { return feeApplies(r, wins, cfg); }).length;

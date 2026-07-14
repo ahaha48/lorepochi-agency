@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS ag_config (
   fee_enduser_monthly_bonus INTEGER DEFAULT 1000,
   cap_enduser_monthly       INTEGER DEFAULT 3000,
   reward_enduser_win        INTEGER DEFAULT 20000,
-  fee_agency_weekly         INTEGER DEFAULT 1000,
+  fee_agency_weekly         INTEGER DEFAULT 1250,
   fee_agency_win_1st        INTEGER DEFAULT 50000,
   fee_agency_win_2nd        INTEGER DEFAULT 70000, -- 入店完了2件目以降
   restriction_days          INTEGER DEFAULT 180
