@@ -254,10 +254,12 @@
       <section id="sec-rewards">
         <h2 class="sec">💰 報酬・支払い</h2>
         <div class="toolbar">
+          <span class="muted" style="font-size:12px">対象月</span>
+          <select id="rw-month" onchange="renderRewards()"></select>
           <button class="btn gold" onclick="csvAgency()">⬇ 代理店支払いCSV</button>
           <button class="btn gold" onclick="csvBroker()">⬇ ブローカー別CSV</button>
           <button class="btn ghost" onclick="csvEndUser()">⬇ エンド報酬CSV</button>
-          <span class="muted" style="font-size:12px">対象：登録済みの全月</span>
+          <span class="muted" id="rw-caption" style="font-size:12px"></span>
         </div>
         <div class="card"><div class="h">🏢 代理店別（弊社→代理店の支払い）</div><div id="rw-agency"></div></div>
         <div class="card"><div class="h">🧑‍💼 ブローカー別</div><div id="rw-broker"></div></div>
@@ -814,15 +816,55 @@ async function delWin(id){
 }
 
 /* ---------- rewards ---------- */
-function computeDetail(){
-  const c=cfg(); const months=c.available_months.slice();
+/* ---------- 月別報酬（対象月の選択・集計） ---------- */
+// 報酬ページの対象月リスト = 登録済み月（available_months）∪ 入店完了月（当選者フィーの計上月）。
+// 和集合にする理由: 各月ビューの合計 Σ が「全期間（累計）」と必ず一致し、
+// どの月ビューにも現れない報酬＝過少支払いを防ぐため（入店完了月は available_months 外になり得る）。
+function rewardMonths(){
+  const c=cfg();
+  const s=new Set((c.available_months||[]).map(Number));
+  AG.endUsers.forEach(u=>AgCalc.completedWins(u.id,AG.wins,c).forEach(x=>{
+    if(x.accountingMonth!=null) s.add(Number(x.accountingMonth));
+  }));
+  return [...s].sort((a,b)=>a-b);
+}
+// 対象月ラベル（null＝全期間）
+function rewardMonthLabel(month){ return month==null ? '全期間（累計）' : month+'月'; }
+// #rw-month の選択値を取り出す。'' / 'all'（＝全期間）は null に。数値は Number 化（DOM値は文字列のため）。
+function rewardMonthSel(){
+  const el=$('#rw-month'); const v=el?el.value:'';
+  return (v===''||v==='all') ? null : Number(v);
+}
+// #rw-month の選択肢を（データに合わせて）作り直す。既存の選択は維持。
+// 初回のみ既定＝現在月（cfg().cur_month）、無ければ全期間。
+let _rwMonthReady=false;
+function syncRewardMonthSel(){
+  const el=$('#rw-month'); if(!el) return;
+  const months=rewardMonths();
+  const cur=cfg().cur_month;
+  const defVal = months.includes(cur) ? String(cur) : '';   // 現在月が無ければ全期間へフォールバック
+  let keep;
+  if(!_rwMonthReady){ keep=defVal; _rwMonthReady=true; }
+  else { keep = (el.value===''||months.map(String).includes(el.value)) ? el.value : defVal; }
+  el.innerHTML = `<option value="">全期間（累計）</option>` + months.map(m=>`<option value="${m}">${m}月</option>`).join('');
+  el.value = keep;
+}
+
+// month が number ならその月のみ、null/未指定なら全期間（累計）を集計する。
+// ・参加報酬／代理店応募フィー … その月ぶんだけ合算（月次関数がそのまま月単位）
+// ・当選報酬／当選者フィー … completedWins を全件計算して 1件目5万/2件目以降7万の順序を確定させてから、
+//   accountingMonth（入店完了日の月）が対象月のものだけ加算（順序が月フィルタで壊れない）
+function computeDetail(month){
+  const c=cfg();
+  const months = (month==null) ? c.available_months.slice() : [month];
   return AG.endUsers.map(u=>{
     let euPart=0, agApp=0;
     months.forEach(m=>{
       euPart += AgCalc.endUserMonthlyParticipation(u.id,m,AG.weekly,AG.wins,weeksOf(m),c).total;
       agApp  += AgCalc.agencyMonthlyAppFee(u.id,m,AG.weekly,AG.wins,c).total;
     });
-    const cw=AgCalc.completedWins(u.id,AG.wins,c);
+    const cwAll=AgCalc.completedWins(u.id,AG.wins,c);
+    const cw = (month==null) ? cwAll : cwAll.filter(x=>x.accountingMonth===month);
     let euWin=0, agWin=0; cw.forEach(x=>{euWin+=x.endUserReward; agWin+=x.agencyFee;});
     // 代理店直（broker なし）は u.agency_id で直接代理店に紐づく。broker があればそちら優先。
     const broker=u.broker_id?AG.brokers.find(b=>b.id===u.broker_id):null;
@@ -836,7 +878,10 @@ function sumBy(det, keyFn, fields){
   return map;
 }
 function renderRewards(){
-  const det=computeDetail();
+  syncRewardMonthSel();
+  const month=rewardMonthSel();
+  const cap=$('#rw-caption'); if(cap) cap.textContent = `表示中：${rewardMonthLabel(month)}`;
+  const det=computeDetail(month);
   const byA=sumBy(det, d=>d.agency?d.agency.id:0, ['agApp','agWin','agTotal']);
   let ah=`<div class="tablewrap"><table><tr><th>代理店</th><th class="r">応募フィー</th><th class="r">当選者フィー</th><th class="r">支払合計</th></tr>`;
   let tA=0;
@@ -856,23 +901,27 @@ function renderRewards(){
   eh+='</table></div>';
   $('#rw-enduser').innerHTML = det.length?eh:'<div class="empty">エンドユーザーが未登録です</div>';
 }
+function csvSuffix(month){ return month==null ? '全期間' : month+'月'; }
 function csvAgency(){
-  const det=computeDetail(); const byA=sumBy(det, d=>d.agency?d.agency.id:0, ['agApp','agWin','agTotal']);
-  const rows=[['代理店','応募フィー','当選者フィー','支払合計']];
+  const month=rewardMonthSel();
+  const det=computeDetail(month); const byA=sumBy(det, d=>d.agency?d.agency.id:0, ['agApp','agWin','agTotal']);
+  const rows=[['対象月', rewardMonthLabel(month)], [], ['代理店','応募フィー','当選者フィー','支払合計']];
   AG.agencies.forEach(a=>{ const r=byA[a.id]||{}; rows.push([a.name, r.agApp||0, r.agWin||0, r.agTotal||0]); });
-  downloadCSV('代理店支払い.csv', rows);
+  downloadCSV(`代理店支払い_${csvSuffix(month)}.csv`, rows);
 }
 function csvBroker(){
-  const det=computeDetail();
-  const rows=[['代理店','ブローカー','エンド','LINE名','代理店応募フィー','代理店当選者フィー','小計']];
+  const month=rewardMonthSel();
+  const det=computeDetail(month);
+  const rows=[['対象月', rewardMonthLabel(month)], [], ['代理店','ブローカー','エンド','LINE名','代理店応募フィー','代理店当選者フィー','小計']];
   det.forEach(d=>rows.push([d.agency?d.agency.name:'', d.broker?d.broker.name:'（代理店直）', d.u.real_name||'', d.u.line_name||'', d.agApp, d.agWin, d.agTotal]));
-  downloadCSV('ブローカー別明細.csv', rows);
+  downloadCSV(`ブローカー別明細_${csvSuffix(month)}.csv`, rows);
 }
 function csvEndUser(){
-  const det=computeDetail();
-  const rows=[['エンド','LINE名','所属','参加報酬','当選報酬','合計']];
+  const month=rewardMonthSel();
+  const det=computeDetail(month);
+  const rows=[['対象月', rewardMonthLabel(month)], [], ['エンド','LINE名','所属','参加報酬','当選報酬','合計']];
   det.forEach(d=>rows.push([d.u.real_name||'', d.u.line_name||'', orgLabel(d.u), d.euPart, d.euWin, d.euTotal]));
-  downloadCSV('エンド報酬.csv', rows);
+  downloadCSV(`エンド報酬_${csvSuffix(month)}.csv`, rows);
 }
 function downloadCSV(name, rows){
   const csv=rows.map(r=>r.map(c=>{ const s=(c==null?'':''+c).replace(/"/g,'""'); return /[",\n]/.test(s)?`"${s}"`:s; }).join(',')).join('\r\n');
