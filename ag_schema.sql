@@ -3,7 +3,7 @@
 -- ★ 本番ロレポチと「同一」Supabaseプロジェクトに ag_ 接頭辞で同居させる構成
 --   （無料枠が2プロジェクト上限のため。既存テーブルには一切触れず ag_ を追加するだけ）
 -- ★ Supabase SQL Editor で全文実行
--- 階層: 代理店(ag_agencies) → ブローカー(ag_brokers) → エンドユーザー(ag_end_users)
+-- 階層: 代理店(ag_agencies) → エンドユーザー(ag_end_users)  ※ブローカー層は廃止（v2）
 -- 当選の正データは ag_wins。当落・当選回数はここから導出する（スカラーで持たない）
 -- ================================================================
 
@@ -16,32 +16,20 @@ CREATE TABLE IF NOT EXISTS ag_agencies (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 2. ブローカー
-CREATE TABLE IF NOT EXISTS ag_brokers (
-  id         BIGINT PRIMARY KEY,
-  agency_id  BIGINT NOT NULL REFERENCES ag_agencies(id) ON DELETE CASCADE,
-  name       TEXT NOT NULL,
-  note       TEXT DEFAULT '',
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 3. エンドユーザー（応募者）
+-- 2. エンドユーザー（応募者）
 --    ※ 銀行口座は機微情報のため、この表には持たず ag_bank_accounts（管理者専用）に格納
---    ※ 「ブローカー経由(broker_id)」か「代理店直(agency_id)」の“ちょうど一方”だけを持つ（XOR）
+--    ※ v2でブローカー層を廃止。エンドユーザーは代理店に直属（agency_id 必須）。
 CREATE TABLE IF NOT EXISTS ag_end_users (
   id         BIGINT PRIMARY KEY,
-  broker_id  BIGINT REFERENCES ag_brokers(id)  ON DELETE CASCADE,  -- 代理店直では NULL
-  agency_id  BIGINT REFERENCES ag_agencies(id) ON DELETE CASCADE,  -- ブローカー経由では NULL
+  agency_id  BIGINT NOT NULL REFERENCES ag_agencies(id) ON DELETE CASCADE,  -- 所属代理店
   line_name  TEXT,                         -- 公式LINE名
   real_name  TEXT,                         -- 照合用の本名（機微情報）
   status     TEXT DEFAULT '応募中',
   note       TEXT DEFAULT '',
-  created_at TIMESTAMPTZ DEFAULT now(),
-  CONSTRAINT ag_end_users_broker_xor_agency
-    CHECK ((broker_id IS NOT NULL) <> (agency_id IS NOT NULL))
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4. 週次入力（店舗数ベース・毎週水曜締め）
+-- 3. 週次入力（店舗数ベース・毎週水曜締め）
 CREATE TABLE IF NOT EXISTS ag_weekly (
   month          INTEGER NOT NULL,         -- 暦月(1-12)
   week           INTEGER NOT NULL,         -- 月内の週(1-4/5)
@@ -52,7 +40,7 @@ CREATE TABLE IF NOT EXISTS ag_weekly (
   PRIMARY KEY (month, week, end_user_id)
 );
 
--- 5. 当選（正データ）
+-- 4. 当選（正データ）
 CREATE TABLE IF NOT EXISTS ag_wins (
   id                    BIGINT PRIMARY KEY,
   end_user_id           BIGINT NOT NULL REFERENCES ag_end_users(id) ON DELETE CASCADE,
@@ -66,7 +54,7 @@ CREATE TABLE IF NOT EXISTS ag_wins (
   note                  TEXT DEFAULT ''
 );
 
--- 6. 設定（月・週の状態、金額、日数）※金額はここで一元管理＝将来変更しても過去分はコード側でスナップショット
+-- 5. 設定（月・週の状態、金額、日数）※金額はここで一元管理＝将来変更しても過去分はコード側でスナップショット
 CREATE TABLE IF NOT EXISTS ag_config (
   key                       TEXT PRIMARY KEY,
   cur_month                 INTEGER DEFAULT 1,
@@ -74,11 +62,11 @@ CREATE TABLE IF NOT EXISTS ag_config (
   available_months          JSONB DEFAULT '[1]',
   weeks_per_month           JSONB DEFAULT '{"1":[1,2,3,4]}',  -- 各月の週リスト
   required_stores           INTEGER DEFAULT 5,   -- 週次条件の必要店舗数（イベント時6）
-  fee_enduser_weekly        INTEGER DEFAULT 500,
-  fee_enduser_monthly_bonus INTEGER DEFAULT 1000,
-  cap_enduser_monthly       INTEGER DEFAULT 3000,
+  fee_enduser_weekly        INTEGER DEFAULT 1000,  -- v2: 1週1,000円
+  fee_enduser_monthly_bonus INTEGER DEFAULT 1000,  -- 4週コンプで+1,000円
+  cap_enduser_monthly       INTEGER DEFAULT 5000,  -- v2: MAX 5,000円
   reward_enduser_win        INTEGER DEFAULT 20000,
-  fee_agency_weekly         INTEGER DEFAULT 1250,
+  fee_agency_weekly         INTEGER DEFAULT 2000,   -- v2: 1週2,000円（4週=8,000円）
   fee_agency_win_1st        INTEGER DEFAULT 50000,
   fee_agency_win_2nd        INTEGER DEFAULT 70000, -- 入店完了2件目以降
   restriction_days          INTEGER DEFAULT 180
@@ -86,7 +74,7 @@ CREATE TABLE IF NOT EXISTS ag_config (
 
 INSERT INTO ag_config (key) VALUES ('main') ON CONFLICT (key) DO NOTHING;
 
--- 7. 銀行口座（★管理者専用テーブル）
+-- 6. 銀行口座（★管理者専用テーブル）
 --    エンドユーザー/代理店の口座をここに集約。RLSで管理者メールのみ許可。
 --    owner_type: 'end_user' | 'agency' ／ owner_id: 各テーブルの id
 CREATE TABLE IF NOT EXISTS ag_bank_accounts (
@@ -103,21 +91,18 @@ CREATE TABLE IF NOT EXISTS ag_bank_accounts (
 --   service_role キーは絶対にフロントに埋め込まないこと。
 -- ================================================================
 ALTER TABLE ag_agencies  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ag_brokers   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ag_end_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ag_weekly    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ag_wins      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ag_config    ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Allow authenticated" ON ag_agencies;
-DROP POLICY IF EXISTS "Allow authenticated" ON ag_brokers;
 DROP POLICY IF EXISTS "Allow authenticated" ON ag_end_users;
 DROP POLICY IF EXISTS "Allow authenticated" ON ag_weekly;
 DROP POLICY IF EXISTS "Allow authenticated" ON ag_wins;
 DROP POLICY IF EXISTS "Allow authenticated" ON ag_config;
 
 CREATE POLICY "Allow authenticated" ON ag_agencies  FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "Allow authenticated" ON ag_brokers   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow authenticated" ON ag_end_users FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow authenticated" ON ag_weekly    FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "Allow authenticated" ON ag_wins      FOR ALL TO authenticated USING (true) WITH CHECK (true);

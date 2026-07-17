@@ -18,11 +18,11 @@
 
   var DEFAULT_CONFIG = {
     required_stores: 5,
-    fee_enduser_weekly: 500,
+    fee_enduser_weekly: 1000,
     fee_enduser_monthly_bonus: 1000,
-    cap_enduser_monthly: 3000,
+    cap_enduser_monthly: 5000,
     reward_enduser_win: 20000,
-    fee_agency_weekly: 1250,
+    fee_agency_weekly: 2000,
     fee_agency_win_1st: 50000,
     fee_agency_win_2nd: 70000, // 入店完了2件目以降（3件目以降も暫定同額。将来ルール要確認）
     restriction_days: 180,
@@ -68,7 +68,7 @@
   function daysBetween(a, b) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
   function calMonth(ymd) { return ymd ? +String(ymd).slice(4,6) : null; }
 
-  // エンドユーザーの、ある月の参加報酬（週次500 + ボーナス、上限3000）
+  // エンドユーザーの、ある月の参加報酬（週次1000 + ボーナス、上限5000）
   function endUserMonthlyParticipation(endUserId, month, weeklyRows, wins, weeksOfMonth, cfg) {
     var rows = weeklyRows.filter(function (r) { return r.end_user_id === endUserId && r.month === month; });
     var feeWeeks = rows.filter(function (r) { return feeApplies(r, wins, cfg); });
@@ -87,7 +87,7 @@
     };
   }
 
-  // エンドユーザーの、ある月の代理店応募フィー（1250×feeweeks、上限/ボーナスなし）
+  // エンドユーザーの、ある月の代理店応募フィー（2000×feeweeks、上限/ボーナスなし）
   function agencyMonthlyAppFee(endUserId, month, weeklyRows, wins, cfg) {
     var rows = weeklyRows.filter(function (r) { return r.end_user_id === endUserId && r.month === month; });
     var n = rows.filter(function (r) { return feeApplies(r, wins, cfg); }).length;
@@ -129,25 +129,22 @@
              soon: remaining >= 0 && remaining <= 7, released: remaining < 0 };
   }
 
-  // 全体集計（ブローカー別・代理店別・エンドユーザー別）
+  // 全体集計（代理店別・エンドユーザー別）
   function aggregate(data, cfg) {
     cfg = Object.assign({}, DEFAULT_CONFIG, cfg || {});
-    var agencies = data.agencies, brokers = data.brokers, endUsers = data.endUsers,
+    var endUsers = data.endUsers,
         weekly = data.weekly, wins = data.wins, weeksPerMonth = data.weeksPerMonth || {};
     var months = Object.keys(weeksPerMonth).map(Number);
 
-    var agencyOfBroker = {}; brokers.forEach(function (b) { agencyOfBroker[b.id] = b.agency_id; });
-
-    var perEndUser = {}, perBroker = {}, perAgency = {};
+    var perEndUser = {}, perAgency = {};
     function add(map, id, field, amt) {
       if (!map[id]) map[id] = { appFee: 0, winFee: 0, total: 0 };
       map[id][field] += amt; map[id].total += amt;
     }
 
     endUsers.forEach(function (u) {
-      // 代理店直（broker なし）は agency_id で直接代理店に紐づく。broker があればそちら優先。
-      var brokerId = u.broker_id || null;
-      var agencyId = brokerId ? agencyOfBroker[brokerId] : (u.agency_id || null);
+      // エンドユーザーは agency_id で直接代理店に紐づく（ブローカー廃止）
+      var agencyId = u.agency_id || null;
       var euPart = 0, euWin = 0, agAppFee = 0, agWinFee = 0;
 
       months.forEach(function (m) {
@@ -159,12 +156,10 @@
       });
 
       perEndUser[u.id] = { participation: euPart, winReward: euWin, total: euPart + euWin };
-      // ブローカーは代理店直ユーザーには存在しない → null キーを作らない
-      if (brokerId != null) { add(perBroker, brokerId, 'appFee', agAppFee); add(perBroker, brokerId, 'winFee', agWinFee); }
       if (agencyId != null) { add(perAgency, agencyId, 'appFee', agAppFee); add(perAgency, agencyId, 'winFee', agWinFee); }
     });
 
-    return { perEndUser: perEndUser, perBroker: perBroker, perAgency: perAgency };
+    return { perEndUser: perEndUser, perAgency: perAgency };
   }
 
   var API = {

@@ -158,7 +158,7 @@
       <a data-sec="dash" class="active"><span class="ic">📊</span>ダッシュボード</a>
       <a data-sec="weekly"><span class="ic">📝</span>週次入力</a>
       <a data-sec="endusers"><span class="ic">👥</span>エンドユーザー</a>
-      <a data-sec="orgs"><span class="ic">🏢</span>代理店・ブローカー</a>
+      <a data-sec="orgs"><span class="ic">🏢</span>代理店</a>
       <a data-sec="wins"><span class="ic">🏆</span>当選者一覧</a>
       <a data-sec="rewards"><span class="ic">💰</span>報酬・支払い</a>
       <a data-sec="restrict"><span class="ic">⏳</span>制限管理</a>
@@ -201,7 +201,7 @@
       <section id="sec-weekly">
         <h2 class="sec">📝 週次入力 <span class="pill" id="weekly-label"></span></h2>
         <div class="toolbar">
-          <select id="weekly-broker" onchange="renderWeekly()"></select>
+          <select id="weekly-agency" onchange="renderWeekly()"></select>
           <span class="muted">条件：抽選 <b id="req1">5</b> 店舗以上 ＆ 結果SS✓ で達成</span>
           <span class="spacer" style="flex:1"></span>
           <span class="muted">数値は自動保存されます</span>
@@ -228,10 +228,9 @@
 
       <!-- ORGS -->
       <section id="sec-orgs">
-        <h2 class="sec">🏢 代理店・ブローカー管理</h2>
+        <h2 class="sec">🏢 代理店管理</h2>
         <div class="toolbar">
           <button class="btn" onclick="editAgency()">＋ 代理店追加</button>
-          <button class="btn ghost" onclick="editBroker()">＋ ブローカー追加</button>
           <label class="muted" style="font-size:12px"><input type="checkbox" id="org-reveal" onchange="renderOrgs()"> 口座情報を表示（🔒管理者のみ）</label>
         </div>
         <div id="orgs-body"></div>
@@ -257,12 +256,11 @@
           <span class="muted" style="font-size:12px">対象月</span>
           <select id="rw-month" onchange="renderRewards()"></select>
           <button class="btn gold" onclick="csvAgency()">⬇ 代理店支払いCSV</button>
-          <button class="btn gold" onclick="csvBroker()">⬇ ブローカー別CSV</button>
+          <button class="btn gold" onclick="csvAgencyDetail()">⬇ 代理店別 明細CSV</button>
           <button class="btn ghost" onclick="csvEndUser()">⬇ エンド報酬CSV</button>
           <span class="muted" id="rw-caption" style="font-size:12px"></span>
         </div>
         <div class="card"><div class="h">🏢 代理店別（弊社→代理店の支払い）</div><div id="rw-agency"></div></div>
-        <div class="card"><div class="h">🧑‍💼 ブローカー別</div><div id="rw-broker"></div></div>
         <div class="card"><div class="h">👤 エンドユーザー別 報酬（代理店が外部で支払う参考値）</div><div id="rw-enduser"></div></div>
       </section>
 
@@ -299,7 +297,6 @@
             <div class="fld"><label>稼働</label><select id="sf-active" onchange="runSegment()">
               <option value="">すべて</option><option value="active">アクティブのみ</option><option value="inactive">非アクティブのみ</option></select></div>
             <div class="fld"><label>代理店</label><select id="sf-agency" onchange="runSegment()"></select></div>
-            <div class="fld"><label>ブローカー</label><select id="sf-broker" onchange="runSegment()"></select></div>
             <div class="fld"><label>備考キーワード</label><input id="sf-note" placeholder="部分一致" oninput="runSegment()"></div>
             <div class="fld"><label>名前・LINE名</label><input id="sf-name" placeholder="部分一致" oninput="runSegment()"></div>
           </div>
@@ -344,10 +341,10 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 let SB = null;
 const CFG_DEFAULT = { key:'main', cur_month:1, cur_week:1, available_months:[1],
-  weeks_per_month:{"1":[1,2,3,4]}, required_stores:5, fee_enduser_weekly:500,
-  fee_enduser_monthly_bonus:1000, cap_enduser_monthly:3000, reward_enduser_win:20000,
-  fee_agency_weekly:1250, fee_agency_win_1st:50000, fee_agency_win_2nd:70000, restriction_days:180 };
-let AG = { agencies:[], brokers:[], endUsers:[], weekly:[], wins:[], bankAccounts:[], config:Object.assign({},CFG_DEFAULT) };
+  weeks_per_month:{"1":[1,2,3,4]}, required_stores:5, fee_enduser_weekly:1000,
+  fee_enduser_monthly_bonus:1000, cap_enduser_monthly:5000, reward_enduser_win:20000,
+  fee_agency_weekly:2000, fee_agency_win_1st:50000, fee_agency_win_2nd:70000, restriction_days:180 };
+let AG = { agencies:[], endUsers:[], weekly:[], wins:[], bankAccounts:[], config:Object.assign({},CFG_DEFAULT) };
 
 // 銀行口座を閲覧・編集できる管理者（RLSでもDB側で強制。ここはUI表示制御用）
 const ADMIN_EMAILS = ['ahahakoubou48@gmail.com'];
@@ -362,16 +359,13 @@ function todayYMD(){ const d=new Date(); return ''+d.getFullYear()+String(d.getM
 function fmtDate(s){ if(!s||(''+s).length<8)return '—'; s=''+s; return s.slice(0,4)+'/'+s.slice(4,6)+'/'+s.slice(6,8); }
 function esc(s){ return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1900); }
-function brokerName(id){ const b=AG.brokers.find(x=>x.id===id); return b?b.name:'（未所属）'; }
-function agencyName(id){ const a=AG.agencies.find(x=>x.id===id); return a?a.name:'—'; }
-// 所属ラベル: ブローカー経由はブローカー名、代理店直は「🏢代理店名（直）」
+// 所属ラベル: エンドユーザーは代理店に直属（ブローカー廃止）
 function orgLabel(u){
-  if(u.broker_id) return brokerName(u.broker_id);
-  if(u.agency_id){ const a=AG.agencies.find(x=>x.id===u.agency_id); return a?('🏢'+a.name+'（直）'):'（代理店直）'; }
+  if(u.agency_id){ const a=AG.agencies.find(x=>x.id===u.agency_id); return a?('🏢'+a.name):'（未所属）'; }
   return '（未所属）';
 }
-// エンドユーザーが最終的に紐づく代理店ID（ブローカー経由 or 代理店直）
-function agencyIdOf(u){ return u.broker_id ? agencyOfBroker(u.broker_id) : (u.agency_id||null); }
+// エンドユーザーが紐づく代理店ID
+function agencyIdOf(u){ return u.agency_id||null; }
 function euName(u){ return u.line_name || u.real_name || ('ID'+u.id); }
 function mask(s){ if(!s) return '—'; return '••••'+(''+s).slice(-3); }
 
@@ -381,16 +375,15 @@ async function signOut(){ if(SB) await SB.auth.signOut(); location.reload(); }
 
 /* ---------- data ---------- */
 async function loadAll(){
-  const [a,b,e,w,wi,c,bk] = await Promise.all([
+  const [a,e,w,wi,c,bk] = await Promise.all([
     SB.from('ag_agencies').select('*').order('created_at'),
-    SB.from('ag_brokers').select('*').order('created_at'),
     SB.from('ag_end_users').select('*').order('created_at'),
     SB.from('ag_weekly').select('*'),
     SB.from('ag_wins').select('*'),
     SB.from('ag_config').select('*').eq('key','main').maybeSingle(),
     SB.from('ag_bank_accounts').select('*')   // 管理者以外はRLSで0件が返る
   ]);
-  AG.agencies=a.data||[]; AG.brokers=b.data||[]; AG.endUsers=e.data||[]; AG.weekly=w.data||[]; AG.wins=wi.data||[]; AG.bankAccounts=bk.data||[];
+  AG.agencies=a.data||[]; AG.endUsers=e.data||[]; AG.weekly=w.data||[]; AG.wins=wi.data||[]; AG.bankAccounts=bk.data||[];
   AG.config = Object.assign({}, CFG_DEFAULT, c.data||{});
   if(!AG.config.available_months || !AG.config.available_months.length) AG.config.available_months=[1];
   if(!AG.config.weeks_per_month || !Object.keys(AG.config.weeks_per_month).length) AG.config.weeks_per_month={"1":[1,2,3,4]};
@@ -453,11 +446,11 @@ function renderWeekly(){
   const m=cfg().cur_month, wk=cfg().cur_week;
   $('#weekly-label').textContent=`${m}月 第${wk}週`;
   $('#req1').textContent=cfg().required_stores;
-  const sel=$('#weekly-broker'); const cur=sel.value;
-  sel.innerHTML='<option value="">全所属</option><option value="__direct">代理店直</option>'+AG.brokers.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  const sel=$('#weekly-agency'); const cur=sel.value;
+  sel.innerHTML='<option value="">全代理店</option>'+AG.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   if(cur) sel.value=cur;
   const fv=sel.value;
-  let list=AG.endUsers.filter(u=> fv==='' ? true : fv==='__direct' ? !u.broker_id : u.broker_id===+fv);
+  let list=AG.endUsers.filter(u=> fv==='' ? true : u.agency_id===+fv);
   const t=$('#weekly-table');
   if(!list.length){ t.innerHTML=`<tr><td class="empty">エンドユーザーがいません。「エンドユーザー」画面で追加してください。</td></tr>`; return; }
   const need=cfg().required_stores;
@@ -488,12 +481,12 @@ function renderWeekly(){
 /* ---------- end users ---------- */
 function renderEndUsers(){
   const sel=$('#eu-filter'); const cur=sel.value;
-  sel.innerHTML='<option value="">全て</option><option value="__direct">代理店直（ブローカーなし）</option>'
-    +AG.brokers.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('');
+  sel.innerHTML='<option value="">全代理店</option>'
+    +AG.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   if(cur) sel.value=cur;
   const fv=sel.value;
   const reveal=$('#eu-reveal').checked;
-  let list=AG.endUsers.filter(u=> fv==='' ? true : fv==='__direct' ? !u.broker_id : u.broker_id===+fv);
+  let list=AG.endUsers.filter(u=> fv==='' ? true : u.agency_id===+fv);
   const t=$('#eu-table');
   if(!list.length){ t.innerHTML=`<tr><td class="empty">まだ登録がありません</td></tr>`; return; }
   let h=`<tr><th>LINE名</th><th>本名</th><th>所属</th><th>備考</th><th>口座情報</th><th>状態</th><th>操作</th></tr>`;
@@ -511,38 +504,19 @@ function renderEndUsers(){
 function editEndUser(id){
   const u = id?AG.endUsers.find(x=>x.id===id):{};
   if(!AG.agencies.length){ toast('先に代理店を登録してください'); return; }
-  const hasBrokers = AG.brokers.length>0;
-  // 所属タイプ初期値: 既存はデータ通り／新規はブローカーがあれば経由・無ければ代理店直
-  const initDirect = id ? (!u.broker_id) : (!hasBrokers);
   const bankField = isAdmin() ? `
     <div class="f"><label>銀行口座情報 <span class="muted">（🔒管理者のみ・機微情報）</span></label><input id="m-bank" value="${esc(id?bankOf('end_user',id):'')}" placeholder="銀行/支店/種別/番号/名義"><div class="hint">管理者専用テーブルに保存。入力部隊など他のログインユーザーには表示されません。</div></div>` : '';
   openModal(id?'エンドユーザー編集':'エンドユーザー追加', `
-    <div class="f"><label>所属タイプ</label>
-      <select id="m-orgtype" onchange="euOrgTypeToggle()">
-        <option value="broker" ${!initDirect?'selected':''} ${hasBrokers?'':'disabled'}>ブローカー経由</option>
-        <option value="direct" ${initDirect?'selected':''}>代理店直（ブローカーなし）</option>
-      </select>
-      ${hasBrokers?'':'<div class="hint">ブローカーが未登録のため「代理店直」のみ選べます。</div>'}
-    </div>
-    <div class="f" id="m-broker-wrap"><label>ブローカー</label><select id="m-broker">${AG.brokers.map(b=>`<option value="${b.id}" ${u.broker_id===b.id?'selected':''}>${esc(b.name)}（${esc(agencyName(b.agency_id))}）</option>`).join('')}</select></div>
-    <div class="f" id="m-agency-wrap"><label>代理店（直属先）</label><select id="m-agency-direct">${AG.agencies.map(a=>`<option value="${a.id}" ${u.agency_id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
+    <div class="f"><label>代理店（所属先）</label><select id="m-agency-direct">${AG.agencies.map(a=>`<option value="${a.id}" ${u.agency_id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
     <div class="f"><label>公式LINE名</label><input id="m-line" value="${esc(u.line_name)||''}"></div>
     <div class="f"><label>本名（照合用）</label><input id="m-real" value="${esc(u.real_name)||''}"></div>
     ${bankField}
     <div class="f"><label>状態</label><select id="m-status">${['応募中','制限中','2本目応募中','完了','停止'].map(s=>`<option ${u.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
   `, async ()=>{
     const eid = id||Date.now();
-    const direct = $('#m-orgtype').value==='direct';
-    let broker_id=null, agency_id=null;
-    if(direct){
-      agency_id = +$('#m-agency-direct').value || null;
-      if(!agency_id){ toast('直属先の代理店を選んでください'); return false; }
-    } else {
-      broker_id = +$('#m-broker').value || null;
-      if(!broker_id){ toast('ブローカーを選んでください'); return false; }
-    }
-    // ★ broker_id / agency_id は必ず両方（消す側は null）を送る＝旧値が残らない・XOR制約を満たす
-    const row={ id:eid, broker_id, agency_id, line_name:$('#m-line').value.trim(),
+    const agency_id = +$('#m-agency-direct').value || null;
+    if(!agency_id){ toast('所属先の代理店を選んでください'); return false; }
+    const row={ id:eid, agency_id, line_name:$('#m-line').value.trim(),
       real_name:$('#m-real').value.trim(), status:$('#m-status').value };
     const {error}=await SB.from('ag_end_users').upsert(row);
     if(error){ toast('失敗: '+error.message); return false; }
@@ -552,13 +526,6 @@ function editEndUser(id){
     }
     await reload(); toast('保存しました');
   });
-  euOrgTypeToggle();
-}
-// 所属タイプに応じてブローカー選択／代理店選択を出し分け
-function euOrgTypeToggle(){
-  const direct = $('#m-orgtype') && $('#m-orgtype').value==='direct';
-  if($('#m-broker-wrap')) $('#m-broker-wrap').style.display = direct?'none':'';
-  if($('#m-agency-wrap')) $('#m-agency-wrap').style.display = direct?'':'none';
 }
 async function delEndUser(id){
   const u=AG.endUsers.find(x=>x.id===id);
@@ -586,8 +553,7 @@ function bulkAge(s){
 }
 function openBulkAdd(){
   const orgOpts =
-    AG.agencies.map(a=>`<option value="a:${a.id}">🏢 ${esc(a.name)}（代理店直）</option>`).join('')
-    + AG.brokers.map(b=>`<option value="b:${b.id}">${esc(b.name)}（ブローカー経由）</option>`).join('')
+    AG.agencies.map(a=>`<option value="a:${a.id}">🏢 ${esc(a.name)}</option>`).join('')
     + `<option value="new">＋ 新しい代理店を作成…</option>`;
   const ph = ['あおい','長崎県','TMサロン','結城葵','25','','（次の人も同じ5行で…）'].join('\n');
   $('#modal').innerHTML = `<h3>📋 貼り付けで一括追加</h3>
@@ -648,7 +614,7 @@ function bulkParse(){
 }
 async function bulkCommit(){
   const org=$('#bulk-org').value;
-  let broker_id=null, agency_id=null;
+  let agency_id=null;
   if(org==='new'){
     const name=($('#bulk-newname').value||'').trim();
     if(!name){ toast('新しい代理店の名前を入力してください'); return; }
@@ -657,12 +623,12 @@ async function bulkCommit(){
     if(error){ toast('代理店作成に失敗: '+error.message); return; }
     agency_id=aid;
   } else if(org.slice(0,2)==='a:'){ agency_id=+org.slice(2); }
-  else if(org.slice(0,2)==='b:'){ broker_id=+org.slice(2); }
+  if(!agency_id){ toast('所属先の代理店を選んでください'); return; }
   const toAdd=_bulkRows.filter(r=>r.status==='新規');
   if(!toAdd.length){ toast('登録できる新規行がありません'); return; }
   const base=Date.now();
   const payload=toAdd.map((r,i)=>({
-    id: base+i, broker_id, agency_id,
+    id: base+i, agency_id,
     line_name:r.line_name, real_name:r.real_name, status:'応募中',
     note:`在住:${r.region} 年齢:${r.age} 紹介:${r.referrer}`.replace(/\s+/g,' ').trim()
   }));
@@ -681,23 +647,13 @@ function renderOrgs(){
   if(!AG.agencies.length){ body.innerHTML=`<div class="card"><div class="empty">代理店がまだありません。「＋代理店追加」から登録してください。</div></div>`; return; }
   let h='';
   AG.agencies.forEach(a=>{
-    const brokers=AG.brokers.filter(b=>b.agency_id===a.id);
+    const n=AG.endUsers.filter(u=>u.agency_id===a.id).length;
     h+=`<div class="card"><div class="h">🏢 ${esc(a.name)}
       <span class="spacer" style="flex:1"></span>
       <button class="btn sm ghost" onclick="editAgency(${a.id})">編集</button>
       <button class="btn sm danger" onclick="delAgency(${a.id})">削除</button></div>
       <div class="muted" style="margin:-4px 0 12px">振込先: <span class="pii">${isAdmin()?(reveal?(esc(bankOf('agency',a.id))||'—'):mask(bankOf('agency',a.id))):'🔒 管理者のみ'}</span></div>
-      <div class="tablewrap"><table><tr><th>ブローカー</th><th>所属エンド数</th><th>操作</th></tr>`;
-    if(!brokers.length){ h+=`<tr><td colspan="3" class="muted" style="padding:12px">ブローカー未登録</td></tr>`; }
-    brokers.forEach(b=>{
-      const n=AG.endUsers.filter(u=>u.broker_id===b.id).length;
-      h+=`<tr><td>${esc(b.name)}</td><td>${n}人</td>
-        <td class="rowbtns"><button class="btn sm ghost" onclick="editBroker(${b.id})">編集</button>
-        <button class="btn sm danger" onclick="delBroker(${b.id})">削除</button></td></tr>`;
-    });
-    const directN=AG.endUsers.filter(u=>!u.broker_id && u.agency_id===a.id).length;
-    if(directN) h+=`<tr style="background:#FBF8EF"><td>🏢 代理店直（ブローカーなし）</td><td>${directN}人</td><td class="muted">—</td></tr>`;
-    h+=`</table></div></div>`;
+      <div class="muted">所属エンドユーザー: <b>${n}</b>人</div></div>`;
   });
   body.innerHTML=h;
 }
@@ -724,36 +680,14 @@ function editAgency(id){
 }
 async function delAgency(id){
   const a=AG.agencies.find(x=>x.id===id);
-  confirmModal(`代理店「${esc(a.name)}」を削除しますか？<br><span class="muted">配下のブローカー・エンドユーザー・週次・当選も削除されます。</span>`, async ()=>{
+  confirmModal(`代理店「${esc(a.name)}」を削除しますか？<br><span class="muted">配下のエンドユーザー・週次・当選も削除されます。</span>`, async ()=>{
     if(isAdmin()){
-      const brokerIds=AG.brokers.filter(b=>b.agency_id===id).map(b=>b.id);
-      // ブローカー経由・代理店直の両方のエンドユーザー口座を掃除（DB側はFK CASCADEで本体行は自動削除）
-      const euIds=AG.endUsers.filter(u=>(u.broker_id&&brokerIds.includes(u.broker_id))||(!u.broker_id&&u.agency_id===id)).map(u=>u.id);
+      // 配下エンドユーザーの口座を掃除（DB側はFK CASCADEで本体行は自動削除）
+      const euIds=AG.endUsers.filter(u=>u.agency_id===id).map(u=>u.id);
       await SB.from('ag_bank_accounts').delete().eq('owner_type','agency').eq('owner_id',id);
       if(euIds.length) await SB.from('ag_bank_accounts').delete().eq('owner_type','end_user').in('owner_id',euIds);
     }
     await SB.from('ag_agencies').delete().eq('id',id); await reload(); toast('削除しました');
-  });
-}
-function editBroker(id){
-  const b=id?AG.brokers.find(x=>x.id===id):{};
-  if(!AG.agencies.length){ toast('先に代理店を登録してください'); return; }
-  openModal(id?'ブローカー編集':'ブローカー追加',`
-    <div class="f"><label>所属代理店</label><select id="m-agency">${AG.agencies.map(a=>`<option value="${a.id}" ${b.agency_id===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>
-    <div class="f"><label>ブローカー名</label><input id="m-name" value="${esc(b.name)||''}"></div>
-    <div class="f"><label>メモ</label><input id="m-note" value="${esc(b.note)||''}"></div>
-  `, async ()=>{
-    const name=$('#m-name').value.trim(); if(!name){ toast('ブローカー名を入力'); return false; }
-    const row={ id:id||Date.now(), agency_id:+$('#m-agency').value, name, note:$('#m-note').value.trim() };
-    const {error}=await SB.from('ag_brokers').upsert(row);
-    if(error){ toast('失敗: '+error.message); return false; }
-    await reload(); toast('保存しました');
-  });
-}
-async function delBroker(id){
-  const b=AG.brokers.find(x=>x.id===id);
-  confirmModal(`ブローカー「${esc(b.name)}」を削除しますか？<br><span class="muted">配下のエンドユーザー等も削除されます。</span>`, async ()=>{
-    await SB.from('ag_brokers').delete().eq('id',id); await reload(); toast('削除しました');
   });
 }
 
@@ -866,10 +800,9 @@ function computeDetail(month){
     const cwAll=AgCalc.completedWins(u.id,AG.wins,c);
     const cw = (month==null) ? cwAll : cwAll.filter(x=>x.accountingMonth===month);
     let euWin=0, agWin=0; cw.forEach(x=>{euWin+=x.endUserReward; agWin+=x.agencyFee;});
-    // 代理店直（broker なし）は u.agency_id で直接代理店に紐づく。broker があればそちら優先。
-    const broker=u.broker_id?AG.brokers.find(b=>b.id===u.broker_id):null;
-    const agency=broker?AG.agencies.find(a=>a.id===broker.agency_id):(u.agency_id?AG.agencies.find(a=>a.id===u.agency_id):null);
-    return {u, broker, agency, euPart, euWin, euTotal:euPart+euWin, agApp, agWin, agTotal:agApp+agWin, wins:cw.length};
+    // エンドユーザーは u.agency_id で直接代理店に紐づく（ブローカー廃止）
+    const agency=u.agency_id?AG.agencies.find(a=>a.id===u.agency_id):null;
+    return {u, agency, euPart, euWin, euTotal:euPart+euWin, agApp, agWin, agTotal:agApp+agWin, wins:cw.length};
   });
 }
 function sumBy(det, keyFn, fields){
@@ -889,12 +822,6 @@ function renderRewards(){
     ah+=`<tr><td>${esc(a.name)}</td><td class="r">${yen(r.agApp)}</td><td class="r">${yen(r.agWin)}</td><td class="r"><b>${yen(r.agTotal)}</b></td></tr>`; });
   ah+=`<tr style="background:#F4EFE0"><td><b>合計</b></td><td></td><td></td><td class="r"><b>${yen(tA)}</b></td></tr></table></div>`;
   $('#rw-agency').innerHTML = AG.agencies.length?ah:'<div class="empty">代理店が未登録です</div>';
-  const byB=sumBy(det, d=>d.broker?d.broker.id:0, ['agApp','agWin','agTotal']);
-  let bh=`<div class="tablewrap"><table><tr><th>ブローカー</th><th>代理店</th><th class="r">応募フィー</th><th class="r">当選者フィー</th><th class="r">合計</th></tr>`;
-  AG.brokers.forEach(b=>{ const r=byB[b.id]||{agApp:0,agWin:0,agTotal:0}; const a=AG.agencies.find(x=>x.id===b.agency_id);
-    bh+=`<tr><td>${esc(b.name)}</td><td class="muted">${esc(a?a.name:'—')}</td><td class="r">${yen(r.agApp)}</td><td class="r">${yen(r.agWin)}</td><td class="r"><b>${yen(r.agTotal)}</b></td></tr>`; });
-  bh+='</table></div>';
-  $('#rw-broker').innerHTML = AG.brokers.length?bh:'<div class="empty">ブローカーが未登録です</div>';
   let eh=`<div class="tablewrap"><table><tr><th>エンド</th><th>所属</th><th class="r">参加報酬</th><th class="r">当選報酬</th><th class="r">合計</th></tr>`;
   det.forEach(d=>{ eh+=`<tr><td>${esc(euName(d.u))}</td><td class="muted">${esc(orgLabel(d.u))}</td>
     <td class="r">${yen(d.euPart)}</td><td class="r">${yen(d.euWin)}</td><td class="r"><b>${yen(d.euTotal)}</b></td></tr>`; });
@@ -909,12 +836,12 @@ function csvAgency(){
   AG.agencies.forEach(a=>{ const r=byA[a.id]||{}; rows.push([a.name, r.agApp||0, r.agWin||0, r.agTotal||0]); });
   downloadCSV(`代理店支払い_${csvSuffix(month)}.csv`, rows);
 }
-function csvBroker(){
+function csvAgencyDetail(){
   const month=rewardMonthSel();
   const det=computeDetail(month);
-  const rows=[['対象月', rewardMonthLabel(month)], [], ['代理店','ブローカー','エンド','LINE名','代理店応募フィー','代理店当選者フィー','小計']];
-  det.forEach(d=>rows.push([d.agency?d.agency.name:'', d.broker?d.broker.name:'（代理店直）', d.u.real_name||'', d.u.line_name||'', d.agApp, d.agWin, d.agTotal]));
-  downloadCSV(`ブローカー別明細_${csvSuffix(month)}.csv`, rows);
+  const rows=[['対象月', rewardMonthLabel(month)], [], ['代理店','エンド','LINE名','代理店応募フィー','代理店当選者フィー','小計']];
+  det.forEach(d=>rows.push([d.agency?d.agency.name:'', d.u.real_name||'', d.u.line_name||'', d.agApp, d.agWin, d.agTotal]));
+  downloadCSV(`代理店別明細_${csvSuffix(month)}.csv`, rows);
 }
 function csvEndUser(){
   const month=rewardMonthSel();
@@ -958,7 +885,7 @@ function renderDash(){
   const ty=todayYMD();
   const soon=AG.wins.map(w=>AgCalc.restriction(w,cfg(),ty)).filter(r=>r&&r.soon).length;
   const kpi=[
-    ['代理店数',AG.agencies.length,''],['ブローカー数',AG.brokers.length,''],['エンドユーザー',AG.endUsers.length,''],
+    ['代理店数',AG.agencies.length,''],['エンドユーザー',AG.endUsers.length,''],
     ['弊社→代理店 支払見込',yen(totalAgency),'gold'],['エンド報酬 合計',yen(totalEU),'gold'],
     ['保留（入店未完了）',pend+'件',''],['まもなく解除',soon+'件','']
   ];
@@ -993,7 +920,7 @@ function closeModal(){ $('#modal-bg').style.display='none'; }
 $('#modal-bg').addEventListener('click',e=>{ if(e.target.id==='modal-bg') closeModal(); });
 
 /* ---------- nav ---------- */
-const TITLES={dash:'ダッシュボード',weekly:'週次入力',endusers:'エンドユーザー',orgs:'代理店・ブローカー',wins:'当選者一覧',rewards:'報酬・支払い',restrict:'制限管理',segment:'セグメント抽出'};
+const TITLES={dash:'ダッシュボード',weekly:'週次入力',endusers:'エンドユーザー',orgs:'代理店',wins:'当選者一覧',rewards:'報酬・支払い',restrict:'制限管理',segment:'セグメント抽出'};
 let curSec='dash';
 document.querySelectorAll('#nav a').forEach(a=>a.addEventListener('click',()=>{
   document.querySelectorAll('#nav a').forEach(x=>x.classList.remove('active'));
@@ -1055,8 +982,6 @@ function euRestrictDaysLeft(euId, today){
   const rs=AG.wins.filter(w=>w.end_user_id===euId).map(w=>AgCalc.restriction(w,cfg(),today)).filter(r=>r && !r.released);
   return rs.length ? Math.min.apply(null, rs.map(r=>r.remaining)) : null;
 }
-function agencyOfBroker(brokerId){ const b=AG.brokers.find(x=>x.id===brokerId); return b?b.agency_id:null; }
-
 const SEG_PRESETS={
   all:              {label:'全員', fn:()=>true},
   active_all:       {label:'アクティブ全員', fn:c=>c.active},
@@ -1067,7 +992,6 @@ const SEG_PRESETS={
   stopped:          {label:'停止', fn:c=>c.u.status==='停止'},
   unwon:            {label:'未当選', fn:c=>c.wins===0},
   won_any:          {label:'当選あり', fn:c=>c.wins>=1},
-  agency_direct:    {label:'代理店直（ブローカーなし）', fn:c=>!c.u.broker_id},
   entered:          {label:'買付成功済み', fn:c=>c.entered},
   restricted:       {label:'制限中（全員）', fn:c=>c.restrict==='restricted'},
   restriction_ended:{label:'制限明け', fn:c=>c.restrict==='ended'},
@@ -1082,12 +1006,11 @@ function ensureSegUI(){
     box.dataset.built='1';
   }
   const ag=$('#sf-agency'); if(ag){ const v=ag.value; ag.innerHTML='<option value="">全代理店</option>'+AG.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join(''); ag.value=v; }
-  const bk=$('#sf-broker'); if(bk){ const v=bk.value; bk.innerHTML='<option value="">全ブローカー</option>'+AG.brokers.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join(''); bk.value=v; }
 }
 function applyPreset(k){
   _segPreset=k;
   document.querySelectorAll('#seg-presets .seg-chip').forEach(c=>c.classList.toggle('on', c.dataset.k===k));
-  ['sf-status','sf-wins','sf-restrict','sf-active','sf-agency','sf-broker','sf-note','sf-name'].forEach(id=>{const e=$('#'+id); if(e) e.value='';});
+  ['sf-status','sf-wins','sf-restrict','sf-active','sf-agency','sf-note','sf-name'].forEach(id=>{const e=$('#'+id); if(e) e.value='';});
   runSegment();
 }
 function resetSegFilters(){ applyPreset('all'); }
@@ -1105,7 +1028,7 @@ function segRows(){
 function runSegment(){
   ensureSegUI();
   const fStatus=$('#sf-status')?.value||'', fWins=$('#sf-wins')?.value||'', fRes=$('#sf-restrict')?.value||'',
-        fAct=$('#sf-active')?.value||'', fAg=$('#sf-agency')?.value||'', fBk=$('#sf-broker')?.value||'',
+        fAct=$('#sf-active')?.value||'', fAg=$('#sf-agency')?.value||'',
         fNote=($('#sf-note')?.value||'').toLowerCase(), fName=($('#sf-name')?.value||'').toLowerCase();
   const presetFn=(SEG_PRESETS[_segPreset]||SEG_PRESETS.all).fn;
   const rows=segRows().filter(c=>{
@@ -1118,7 +1041,6 @@ function runSegment(){
     if(fAct==='active' && !c.active) return false;
     if(fAct==='inactive' && c.active) return false;
     if(fAg && String(c.agencyId)!==fAg) return false;
-    if(fBk && String(c.u.broker_id)!==fBk) return false;
     if(fNote && !((c.u.note||'').toLowerCase().includes(fNote))) return false;
     if(fName && !((''+(c.u.line_name||'')+' '+(c.u.real_name||'')).toLowerCase().includes(fName))) return false;
     return true;
@@ -1134,15 +1056,15 @@ function runSegment(){
   const winB=w=>w===0?'<span class="badge b-no">未当選</span>':`<span class="badge b-win">${w}回当選</span>`;
   const resB=r=>r==='restricted'?'<span class="badge b-soon">制限中</span>':r==='ended'?'<span class="badge b-ok">制限明け</span>':'<span class="badge b-no">なし</span>';
   $('#seg-table').innerHTML=
-    `<tr><th>LINE名</th><th>氏名</th><th>代理店</th><th>ブローカー</th><th>状態</th><th>当選</th><th>制限</th><th>稼働</th><th>最終稼働</th><th>備考</th></tr>`+
+    `<tr><th>LINE名</th><th>氏名</th><th>代理店</th><th>状態</th><th>当選</th><th>制限</th><th>稼働</th><th>最終稼働</th><th>備考</th></tr>`+
     (rows.length?rows.map(r=>{ const ag=AG.agencies.find(a=>a.id===r.agencyId);
       return `<tr><td>${esc(r.u.line_name)||'—'}</td><td>${esc(r.u.real_name)||'—'}</td>`+
-        `<td class="muted">${ag?esc(ag.name):'—'}</td><td class="muted">${r.u.broker_id?esc(brokerName(r.u.broker_id)):'（直）'}</td>`+
+        `<td class="muted">${ag?esc(ag.name):'—'}</td>`+
         `<td><span class="badge b-no">${esc(r.u.status)||'—'}</span></td>`+
         `<td>${winB(r.wins)}</td><td>${resB(r.restrict)}</td>`+
         `<td>${r.active?'<span class="badge b-ok">アクティブ</span>':'<span class="badge b-no">非アクティブ</span>'}</td>`+
         `<td class="muted">${esc(r.lastLabel)}</td><td class="muted">${esc(r.u.note)||''}</td></tr>`;
-    }).join(''):`<tr><td colspan="10" class="empty">該当なし</td></tr>`);
+    }).join(''):`<tr><td colspan="9" class="empty">該当なし</td></tr>`);
 }
 function renderSegment(){ runSegment(); }
 function copyLineIds(){
@@ -1161,9 +1083,9 @@ function segCopyFallback(txt,done){
 }
 function exportSegCSV(){
   if(_segResult.length===0){ toast('対象がありません'); return; }
-  const rows=[['LINE名','氏名','代理店','ブローカー','状態','当選回数','購入制限','稼働','最終稼働','備考']];
+  const rows=[['LINE名','氏名','代理店','状態','当選回数','購入制限','稼働','最終稼働','備考']];
   _segResult.forEach(r=>{ const ag=AG.agencies.find(a=>a.id===r.agencyId);
-    rows.push([r.u.line_name||'', r.u.real_name||'', ag?ag.name:'', r.u.broker_id?brokerName(r.u.broker_id):'（代理店直）', r.u.status||'',
+    rows.push([r.u.line_name||'', r.u.real_name||'', ag?ag.name:'', r.u.status||'',
       r.wins, r.restrict==='restricted'?'制限中':r.restrict==='ended'?'制限明け':'なし',
       r.active?'アクティブ':'非アクティブ', r.lastLabel, r.u.note||'']); });
   downloadCSV('セグメント抽出.csv', rows);
