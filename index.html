@@ -99,6 +99,7 @@
   .btn.danger{background:var(--danger)}
   .rowbtns{display:flex;gap:6px}
   .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .toolbar input.search{padding:5px 10px;border:1px solid var(--line);border-radius:7px;background:#fff;font-size:13px;min-width:220px}
   .muted{color:var(--muted)}
   .pii{font-family:monospace;letter-spacing:1px}
   /* modal */
@@ -202,6 +203,7 @@
         <h2 class="sec">📝 週次入力 <span class="pill" id="weekly-label"></span></h2>
         <div class="toolbar">
           <select id="weekly-agency" onchange="renderWeekly()"></select>
+          <input type="search" class="search" id="weekly-q" placeholder="🔍 氏名・LINE名で検索" oninput="renderWeekly()">
           <span class="muted">条件：抽選 <b id="req1">5</b> 店舗以上 ＆ 結果SS✓ で達成</span>
           <span class="spacer" style="flex:1"></span>
           <span class="muted">数値は自動保存されます</span>
@@ -221,6 +223,7 @@
           <button class="btn" onclick="editEndUser()">＋ エンドユーザー追加</button>
           <button class="btn ghost" onclick="openBulkAdd()">📋 貼り付けで一括追加</button>
           <select id="eu-filter" onchange="renderEndUsers()"></select>
+          <input type="search" class="search" id="eu-q" placeholder="🔍 名前・LINE名で検索" oninput="renderEndUsers()">
           <label class="muted" style="font-size:12px"><input type="checkbox" id="eu-reveal" onchange="renderEndUsers()"> 口座情報を表示（🔒管理者のみ）</label>
         </div>
         <div class="tablewrap"><table id="eu-table"></table></div>
@@ -450,9 +453,11 @@ function renderWeekly(){
   sel.innerHTML='<option value="">全代理店</option>'+AG.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   if(cur) sel.value=cur;
   const fv=sel.value;
+  const q=($('#weekly-q')?.value||'').trim().toLowerCase();
   let list=AG.endUsers.filter(u=> fv==='' ? true : u.agency_id===+fv);
+  if(q) list=list.filter(u=>((u.line_name||'')+' '+(u.real_name||'')).toLowerCase().includes(q));
   const t=$('#weekly-table');
-  if(!list.length){ t.innerHTML=`<tr><td class="empty">エンドユーザーがいません。「エンドユーザー」画面で追加してください。</td></tr>`; return; }
+  if(!list.length){ t.innerHTML=`<tr><td class="empty">${q?'検索に一致するエンドユーザーはいません':'エンドユーザーがいません。「エンドユーザー」画面で追加してください。'}</td></tr>`; return; }
   const need=cfg().required_stores;
   const cls=v=>v>=need?'good':(v>0?'bad':'');
   let h=`<tr><th>エンドユーザー</th><th>所属</th><th>抽選店舗</th><th>結果SS</th><th>状態</th><th>操作</th></tr>`;
@@ -486,9 +491,11 @@ function renderEndUsers(){
   if(cur) sel.value=cur;
   const fv=sel.value;
   const reveal=$('#eu-reveal').checked;
+  const q=($('#eu-q')?.value||'').trim().toLowerCase();
   let list=AG.endUsers.filter(u=> fv==='' ? true : u.agency_id===+fv);
+  if(q) list=list.filter(u=>((u.line_name||'')+' '+(u.real_name||'')).toLowerCase().includes(q));
   const t=$('#eu-table');
-  if(!list.length){ t.innerHTML=`<tr><td class="empty">まだ登録がありません</td></tr>`; return; }
+  if(!list.length){ t.innerHTML=`<tr><td class="empty">${q?'検索に一致するエンドユーザーはいません':'まだ登録がありません'}</td></tr>`; return; }
   let h=`<tr><th>LINE名</th><th>本名</th><th>所属</th><th>備考</th><th>口座情報</th><th>状態</th><th>操作</th></tr>`;
   list.forEach(u=>{
     h+=`<tr><td>${esc(u.line_name)||'—'}</td><td>${esc(u.real_name)||'—'}</td>
