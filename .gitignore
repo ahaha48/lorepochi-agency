@@ -33,6 +33,13 @@ secrets.json
 # Claude Code のローカル設定（権限allowlist等・公開不要）
 .claude/
 
+# リッチメニュー制作用の作業ファイル（公開するのは pages/ の本番4ページ＋見本画像・動画のみ）
+richmenu/richmenu_mockups.html
+richmenu/final_menu.html
+richmenu/pages/preview.html
+# ページで使う見本画像は画像除外ルールの例外として許可（PIIなしを確認済み）
+!richmenu/pages/img/sample_ss.jpg
+
 # OS / エディタ
 .DS_Store
 Thumbs.db
