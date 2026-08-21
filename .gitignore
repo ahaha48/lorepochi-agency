@@ -36,7 +36,11 @@ secrets.json
 # リッチメニュー制作用の作業ファイル（公開するのは pages/ の本番4ページ＋見本画像・動画のみ）
 richmenu/richmenu_mockups.html
 richmenu/final_menu.html
+richmenu/menu5_*.html
 richmenu/pages/preview.html
+
+# 当選者専用LINEの招待URLを含むため絶対にコミットしない
+richmenu/当選者ボタン設定_コピペ用.txt
 # ページで使う見本画像は画像除外ルールの例外として許可（PIIなしを確認済み）
 !richmenu/pages/img/sample_ss.jpg
 
