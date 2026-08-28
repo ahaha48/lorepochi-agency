@@ -5,13 +5,18 @@
  *  - 金額・日数は config で一元化（DEFAULT_CONFIG）
  *  - 当選は ag_wins を正データとする。「当選回数カウンタ」は使わない
  *  - 応募フィーは「その週までに当選があるか」の“時点判定”
- *      → 何度再計算しても過去の金額がブレない（当選前の週の500/1000が消えない）
+ *      → 何度再計算しても過去の金額がブレない（当選前の週の1,000円が消えない）
  *  - 3つのトリガを分離:
  *      応募フィー停止 = 当選日(won_date)
  *      支払確定       = 入店完了(store_entry_completed)
  *      180日制限起算  = 入店完了日(なければ当選日)
  *  - 当選者フィーは「入店完了した順」で 1件目=50,000 / 2件目以降=70,000
  *  - 未確定当選（入店未完了）は保留。支払いには含めない
+ *
+ * v3改定（月間コンプリートボーナス廃止・代理店応募フィー1,000円）:
+ *  - 1応募（必要店舗数すべてに応募＋結果SS確認）につき、エンド1,000円／代理店1,000円
+ *  - 月間コンプリートボーナスは廃止（fee_enduser_monthly_bonus = 0）
+ *  - 当選まわり（1件目50,000／2件目以降70,000／エンド20,000＋インセンティブ）は変更なし
  * ================================================================ */
 (function (global) {
   'use strict';
@@ -19,10 +24,10 @@
   var DEFAULT_CONFIG = {
     required_stores: 5,
     fee_enduser_weekly: 1000,
-    fee_enduser_monthly_bonus: 1000,
-    cap_enduser_monthly: 5000,
+    fee_enduser_monthly_bonus: 0,   // v3: 月間コンプリートボーナスは廃止
+    cap_enduser_monthly: 6000,      // v3: 1,000円×最大6週分。上限で切り捨てないための保険値
     reward_enduser_win: 20000,
-    fee_agency_weekly: 2000,
+    fee_agency_weekly: 1000,        // v3: 1応募につき1,000円（旧2,000）
     fee_agency_win_1st: 50000,
     fee_agency_win_2nd: 70000, // 入店完了2件目以降（3件目以降も暫定同額。将来ルール要確認）
     restriction_days: 180,
@@ -68,12 +73,14 @@
   function daysBetween(a, b) { return Math.round((b.getTime() - a.getTime()) / 86400000); }
   function calMonth(ymd) { return ymd ? +String(ymd).slice(4,6) : null; }
 
-  // エンドユーザーの、ある月の参加報酬（週次1000 + ボーナス、上限5000）
+  // エンドユーザーの、ある月の参加報酬（週次1,000円×達成週。v3でボーナスは廃止＝常に0）
   function endUserMonthlyParticipation(endUserId, month, weeklyRows, wins, weeksOfMonth, cfg) {
     var rows = weeklyRows.filter(function (r) { return r.end_user_id === endUserId && r.month === month; });
     var feeWeeks = rows.filter(function (r) { return feeApplies(r, wins, cfg); });
     var weeklySum = feeWeeks.length * cfg.fee_enduser_weekly;
     // ボーナス: 当月の全週すべて条件達成 かつ 当月末まで1本目フェーズ
+    //   ※ v3で fee_enduser_monthly_bonus = 0 になったため、現行ルールでは常に0円。
+    //     ルールが戻る可能性を考えて判定ロジック自体は残してある（金額はconfig側で制御）。
     var allMet = (weeksOfMonth && weeksOfMonth.length > 0) && weeksOfMonth.every(function (wk) {
       var r = rows.find(function (x) { return x.week === wk; });
       return r && conditionMet(r, cfg);
@@ -87,7 +94,7 @@
     };
   }
 
-  // エンドユーザーの、ある月の代理店応募フィー（2000×feeweeks、上限/ボーナスなし）
+  // エンドユーザーの、ある月の代理店応募フィー（1,000円×達成週、上限/ボーナスなし）
   function agencyMonthlyAppFee(endUserId, month, weeklyRows, wins, cfg) {
     var rows = weeklyRows.filter(function (r) { return r.end_user_id === endUserId && r.month === month; });
     var n = rows.filter(function (r) { return feeApplies(r, wins, cfg); }).length;

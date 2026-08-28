@@ -62,11 +62,11 @@ CREATE TABLE IF NOT EXISTS ag_config (
   available_months          JSONB DEFAULT '[1]',
   weeks_per_month           JSONB DEFAULT '{"1":[1,2,3,4]}',  -- 各月の週リスト
   required_stores           INTEGER DEFAULT 5,   -- 週次条件の必要店舗数（イベント時6）
-  fee_enduser_weekly        INTEGER DEFAULT 1000,  -- v2: 1週1,000円
-  fee_enduser_monthly_bonus INTEGER DEFAULT 1000,  -- 4週コンプで+1,000円
-  cap_enduser_monthly       INTEGER DEFAULT 5000,  -- v2: MAX 5,000円
+  fee_enduser_weekly        INTEGER DEFAULT 1000,  -- v3: 1応募（5店舗＋結果SS）につき1,000円
+  fee_enduser_monthly_bonus INTEGER DEFAULT 0,     -- v3: 月間コンプリートボーナスは廃止
+  cap_enduser_monthly       INTEGER DEFAULT 6000,  -- v3: 1,000円×最大6週。上限で切り捨てないための保険値
   reward_enduser_win        INTEGER DEFAULT 20000,
-  fee_agency_weekly         INTEGER DEFAULT 2000,   -- v2: 1週2,000円（4週=8,000円）
+  fee_agency_weekly         INTEGER DEFAULT 1000,   -- v3: 1応募につき1,000円（4週=4,000円）
   fee_agency_win_1st        INTEGER DEFAULT 50000,
   fee_agency_win_2nd        INTEGER DEFAULT 70000, -- 入店完了2件目以降
   restriction_days          INTEGER DEFAULT 180

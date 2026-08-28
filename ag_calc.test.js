@@ -3,7 +3,9 @@
  *  - 当選前の週の報酬が、後から当選が入っても消えないこと（R1修正の確認）
  *  - 途中当選週はフィーなし
  *  - 入店完了順で 1件目50,000 / 2件目70,000
- *  - 月間ボーナスと5,000円上限
+ *  - v3: 月間コンプリートボーナス廃止（全週達成でも 0 円）
+ *  - v3: 1応募につき エンド1,000円 / 代理店1,000円
+ *  - 月上限が達成週ぶんの報酬を切り捨てないこと（最大6週=6,000円）
  */
 var C = require('./ag_calc.js');
 
@@ -22,7 +24,7 @@ eq(C.conditionMet({ lottery_stores: 5, result_ss: true },  cfg), true,  '抽選5
 eq(C.conditionMet({ lottery_stores: 5, result_ss: false }, cfg), false, '抽選5でも 結果SS✗ → 未達成');
 eq(C.conditionMet({ lottery_stores: 3, result_ss: true },  cfg), false, '結果SS✓でも 抽選不足 → 未達成');
 
-// ---- シナリオ1: 当選なし（基本の週次・ボーナス集計）----
+// ---- シナリオ1: 当選なし（基本の週次集計・v3でボーナスは常に0）----
 console.log('シナリオ1: 当選なし');
 var base = {
   agencies: [{ id: 1, name: 'A' }],
@@ -44,16 +46,25 @@ var base = {
 };
 
 var p100 = C.endUserMonthlyParticipation(100, 1, base.weekly, base.wins, [1,2,3,4], cfg);
-eq(p100.total, 5000, 'U100 参加報酬 = 1000×4 + ボーナス1000 = 5000');
-eq(p100.bonus, 1000, 'U100 ボーナス発生');
+eq(p100.total, 4000, 'U100 参加報酬 = 1000×4 = 4000（v3: ボーナスなし）');
+eq(p100.bonus, 0, '★v3: 全4週達成でも月間コンプリートボーナスは0');
 var p101 = C.endUserMonthlyParticipation(101, 1, base.weekly, base.wins, [1,2,3,4], cfg);
-eq(p101.total, 3000, 'U101 参加報酬 = 1000×3（第2週未達成）、ボーナスなし = 3000');
-eq(p101.bonus, 0, 'U101 ボーナスなし（全週達成でない）');
-eq(C.agencyMonthlyAppFee(100, 1, base.weekly, base.wins, cfg).total, 8000, 'U100 代理店応募フィー = 2000×4 = 8000');
-eq(C.agencyMonthlyAppFee(101, 1, base.weekly, base.wins, cfg).total, 6000, 'U101 代理店応募フィー = 2000×3 = 6000');
+eq(p101.total, 3000, 'U101 参加報酬 = 1000×3（第2週未達成）= 3000');
+eq(p101.bonus, 0, 'U101 ボーナスなし（未達成週あり）');
+eq(C.agencyMonthlyAppFee(100, 1, base.weekly, base.wins, cfg).total, 4000, 'U100 代理店応募フィー = 1000×4 = 4000');
+eq(C.agencyMonthlyAppFee(101, 1, base.weekly, base.wins, cfg).total, 3000, 'U101 代理店応募フィー = 1000×3 = 3000');
 
 var agg1 = C.aggregate(base, cfg);
-eq(agg1.perAgency[1], { appFee: 14000, winFee: 0, total: 14000 }, '代理店A合計 = 8000+6000 = 14000（弊社→代理店の支払額）');
+eq(agg1.perAgency[1], { appFee: 7000, winFee: 0, total: 7000 }, '代理店A合計 = 4000+3000 = 7000（弊社→代理店の支払額）');
+
+// ---- シナリオ1b: 月上限が達成週ぶんを切り捨てないこと（v3で上限6,000円）----
+console.log('シナリオ1b: 月上限（6週ある月でも切り捨てない）');
+var w6 = [1,2,3,4,5,6].map(function (wk) {
+  return { month: 3, week: wk, end_user_id: 100, lottery_stores: 5, result_ss: true };
+});
+var p6 = C.endUserMonthlyParticipation(100, 3, w6, [], [1,2,3,4,5,6], cfg);
+eq(p6.total, 6000, '6週すべて達成 = 1000×6 = 6000（上限で切り捨てられない）');
+eq(C.agencyMonthlyAppFee(100, 3, w6, [], cfg).total, 6000, '代理店も 1000×6 = 6000（エンドと同額）');
 
 // ---- シナリオ2: 途中当選 + 入店完了（R1修正の確認）----
 console.log('シナリオ2: 途中当選 + 入店完了（過去の週報酬が消えないか）');
@@ -65,10 +76,10 @@ s2.wins = [{ id: 1, end_user_id: 100, won_date: '20260210', shop: '銀座', mont
 // 月2の週次（当選週）
 s2.weekly.push({ month: 2, week: 1, end_user_id: 100, lottery_stores: 5, result_ss: true });
 
-// ★R1: 当選が後から入っても、月1（当選前）の報酬は 5000 のまま消えない
+// ★R1: 当選が後から入っても、月1（当選前）の報酬は 4000 のまま消えない
 var p100m1 = C.endUserMonthlyParticipation(100, 1, s2.weekly, s2.wins, [1,2,3,4], cfg);
-eq(p100m1.total, 5000, '★R1: 当選後の再計算でも月1参加報酬は5000のまま（消えない）');
-eq(C.agencyMonthlyAppFee(100, 1, s2.weekly, s2.wins, cfg).total, 8000, '★R1: 月1の代理店応募フィーも8000のまま');
+eq(p100m1.total, 4000, '★R1: 当選後の再計算でも月1参加報酬は4000のまま（消えない）');
+eq(C.agencyMonthlyAppFee(100, 1, s2.weekly, s2.wins, cfg).total, 4000, '★R1: 月1の代理店応募フィーも4000のまま');
 
 // 途中当選週（月2第1週）はフィーなし
 eq(C.feeApplies({ month: 2, week: 1, end_user_id: 100, lottery_stores: 5, result_ss: true }, s2.wins, cfg),
@@ -129,12 +140,12 @@ var s5 = {
   wins: [],
 };
 var agg5 = C.aggregate(s5, cfg);
-// 各ユーザーの代理店応募フィー = 2000 × 4週 = 8000
-eq(agg5.perAgency[1],  { appFee: 16000, winFee: 0, total: 16000 }, '代理店A = U100 + U200 = 16000');
-eq(agg5.perAgency[2],  { appFee: 8000, winFee: 0, total: 8000 }, '代理店C = U300のみ = 8000');
+// 各ユーザーの代理店応募フィー = 1000 × 4週 = 4000
+eq(agg5.perAgency[1],  { appFee: 8000, winFee: 0, total: 8000 }, '代理店A = U100 + U200 = 8000');
+eq(agg5.perAgency[2],  { appFee: 4000, winFee: 0, total: 4000 }, '代理店C = U300のみ = 4000');
 eq(agg5.perAgency['null'], undefined, 'perAgency に "null" キーが作られない');
 eq(agg5.perAgency['undefined'], undefined, 'perAgency に "undefined" キーが作られない');
-eq(agg5.perEndUser[200].total, 5000, '代理店直U200 の参加報酬も通常どおり 5000');
+eq(agg5.perEndUser[200].total, 4000, '代理店直U200 の参加報酬も通常どおり 4000');
 
 console.log('\n結果: ' + pass + ' 件成功 / ' + fail + ' 件失敗');
 process.exit(fail === 0 ? 0 : 1);
