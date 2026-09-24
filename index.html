@@ -83,6 +83,7 @@
   .rss-btn:hover{border-color:var(--gold)}
   .rss-btn.ok.active{background:var(--ok);color:#fff;border-color:var(--ok)}
   .rss-btn.ng.active{background:#FCEEEE;color:var(--danger);border-color:var(--danger)}
+  .fdate{display:block;margin-top:4px;padding:3px 5px;border:1px solid var(--line);border-radius:6px;font-size:11px;width:132px;color:var(--muted)}
   .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
   .b-ok{background:#E4F3EA;color:var(--ok)}
   .b-no{background:#F1EDE2;color:var(--muted)}
@@ -212,7 +213,9 @@
           <table id="weekly-table"></table>
         </div>
         <p class="muted" style="font-size:12px;margin-top:10px">
-          ※「当選登録」で当選を登録すると、その週以降は応募フィーが停止します（当選前の週の報酬は保持されます）。
+          ※「当選登録」で当選を登録すると、その週以降は応募フィーが停止します（当選前の週の報酬は保持されます）。<br>
+          ※ 結果SS✓を押すと、その日が「結果SS日」として記録されます（日付欄で変更可）。カウントは結果SS日の月に計上されます。月末が火曜日の場合は翌月1日（水曜）の報告も当月扱いです。<br>
+          ※ 初月は達成回数分を支払い。2ヶ月目以降は、その月の全週を達成（コンプリート）した場合のみ支払対象になります。未完了の月は 0 円です。
         </p>
       </section>
 
@@ -346,7 +349,8 @@ let SB = null;
 const CFG_DEFAULT = { key:'main', cur_month:1, cur_week:1, available_months:[1],
   weeks_per_month:{"1":[1,2,3,4]}, required_stores:5, fee_enduser_weekly:1000,
   fee_enduser_monthly_bonus:0, cap_enduser_monthly:6000, reward_enduser_win:20000,
-  fee_agency_weekly:1000, fee_agency_win_1st:50000, fee_agency_win_2nd:70000, restriction_days:180 };
+  fee_agency_weekly:1000, fee_agency_win_1st:50000, fee_agency_win_2nd:70000, restriction_days:180,
+  rule_v4_from_month:9 };   // v4: この月以降「結果SS日で計上＋初月/コンプリート条件」。null で v3
 let AG = { agencies:[], endUsers:[], weekly:[], wins:[], bankAccounts:[], config:Object.assign({},CFG_DEFAULT) };
 
 // 銀行口座を閲覧・編集できる管理者（RLSでもDB側で強制。ここはUI表示制御用）
@@ -360,6 +364,7 @@ const $ = s => document.querySelector(s);
 const yen = n => '¥' + (n||0).toLocaleString();
 function todayYMD(){ const d=new Date(); return ''+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0'); }
 function fmtDate(s){ if(!s||(''+s).length<8)return '—'; s=''+s; return s.slice(0,4)+'/'+s.slice(4,6)+'/'+s.slice(6,8); }
+function ymd2input(s){ return s?(''+s).slice(0,4)+'-'+(''+s).slice(4,6)+'-'+(''+s).slice(6,8):''; }
 function esc(s){ return (s==null?'':''+s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),1900); }
 // 所属ラベル: エンドユーザーは代理店に直属（ブローカー廃止）
@@ -429,7 +434,7 @@ function weeklyRow(euId,m,wk){ return AG.weekly.find(r=>r.month===m&&r.week===wk
 async function saveWeekly(euId, field, value){
   const m=cfg().cur_month, wk=cfg().cur_week;
   let row=weeklyRow(euId,m,wk);
-  if(!row){ row={month:m,week:wk,end_user_id:euId,lottery_stores:0,result_ss:false,note:''}; AG.weekly.push(row); }
+  if(!row){ row={month:m,week:wk,end_user_id:euId,lottery_stores:0,result_ss:false,result_ss_date:null,note:''}; AG.weekly.push(row); }
   row[field]=Math.max(0,Math.min(9,parseInt(value)||0));
   const {error}=await SB.from('ag_weekly').upsert(row,{onConflict:'month,week,end_user_id'});
   if(error){ toast('保存失敗: '+error.message); } else { toast('保存しました'); }
@@ -439,10 +444,22 @@ async function saveWeekly(euId, field, value){
 async function saveResultSS(euId, val){
   const m=cfg().cur_month, wk=cfg().cur_week;
   let row=weeklyRow(euId,m,wk);
-  if(!row){ row={month:m,week:wk,end_user_id:euId,lottery_stores:0,result_ss:false,note:''}; AG.weekly.push(row); }
+  if(!row){ row={month:m,week:wk,end_user_id:euId,lottery_stores:0,result_ss:false,result_ss_date:null,note:''}; AG.weekly.push(row); }
   row.result_ss=!!val;
+  // v4: ✓を押した日を「結果SS日」として記録（計上月の基準。後から日付欄で変更可）。✗で解除したら日付も消す
+  if(val){ if(!row.result_ss_date) row.result_ss_date=todayYMD(); } else { row.result_ss_date=null; }
   const {error}=await SB.from('ag_weekly').upsert(row,{onConflict:'month,week,end_user_id'});
-  if(error){ toast('保存失敗: '+error.message); } else { toast(val?'結果SS✓を保存':'結果SSを解除'); }
+  if(error){ toast('保存失敗: '+error.message); } else { toast(val?('結果SS✓を保存（'+AgCalc.rowAccountingMonth(row,cfg())+'月分）'):'結果SSを解除'); }
+  renderWeekly();
+}
+// 結果SS日の手入力（YYYY-MM-DD → YYYYMMDD）。空にすると入力月に計上される
+async function saveResultSSDate(euId, val){
+  const m=cfg().cur_month, wk=cfg().cur_week;
+  let row=weeklyRow(euId,m,wk);
+  if(!row){ row={month:m,week:wk,end_user_id:euId,lottery_stores:0,result_ss:false,result_ss_date:null,note:''}; AG.weekly.push(row); }
+  row.result_ss_date = val ? val.replace(/-/g,'') : null;
+  const {error}=await SB.from('ag_weekly').upsert(row,{onConflict:'month,week,end_user_id'});
+  if(error){ toast('保存失敗: '+error.message); } else { toast(row.result_ss_date?('結果SS日を保存（'+AgCalc.rowAccountingMonth(row,cfg())+'月分）'):'結果SS日を解除'); }
   renderWeekly();
 }
 function renderWeekly(){
@@ -462,13 +479,18 @@ function renderWeekly(){
   const cls=v=>v>=need?'good':(v>0?'bad':'');
   let h=`<tr><th>エンドユーザー</th><th>所属</th><th>抽選店舗</th><th>結果SS</th><th>状態</th><th>操作</th></tr>`;
   list.forEach(u=>{
-    const r=weeklyRow(u.id,m,wk)||{lottery_stores:0,result_ss:false};
+    const r=weeklyRow(u.id,m,wk)||{lottery_stores:0,result_ss:false,result_ss_date:null};
     const won=AgCalc.hasWinByWeek(AG.wins,u.id,m,wk);
     const met=AgCalc.conditionMet(r,cfg());
     const feeOn=AgCalc.feeApplies({end_user_id:u.id,month:m,week:wk,lottery_stores:r.lottery_stores,result_ss:r.result_ss},AG.wins,cfg());
     const ssOk=r.result_ss===true;
+    // v4: 結果SS日で計上月が決まる。入力月と違う月に計上されるときは明示する
+    const v4=AgCalc.v4Applies(m,cfg());
+    const am=AgCalc.rowAccountingMonth({month:m,week:wk,result_ss_date:r.result_ss_date},cfg());
+    const amNote=(v4&&feeOn&&am!==m)?`<div class="muted" style="font-size:10px">→ ${am}月分に計上</div>`:'';
+    const dateIn=v4?`<input type="date" class="fdate" title="結果SS日（この日付の月に計上）" value="${esc(ymd2input(r.result_ss_date))}" onchange="saveResultSSDate(${u.id},this.value)">`:'';
     let st = won?'<span class="badge b-win">当選済(フィー停止)</span>'
-            : met?(feeOn?'<span class="badge b-ok">達成→フィー対象</span>':'<span class="badge b-no">達成</span>')
+            : met?(feeOn?'<span class="badge b-ok">達成→フィー対象</span>'+amNote:'<span class="badge b-no">達成</span>')
             :'<span class="badge b-no">未達成</span>';
     h+=`<tr><td>${esc(euName(u))}</td><td class="muted">${esc(orgLabel(u))}</td>
       <td><input class="fin ${cls(r.lottery_stores)}" type="number" min="0" max="9" value="${r.lottery_stores||0}"
@@ -476,7 +498,7 @@ function renderWeekly(){
       <td><div class="rss-toggle">
         <button class="rss-btn ok ${ssOk?'active':''}" onclick="saveResultSS(${u.id},true)">結果SS✓</button>
         <button class="rss-btn ng ${ssOk?'':'active'}" onclick="saveResultSS(${u.id},false)">✗</button>
-      </div></td>
+      </div>${dateIn}</td>
       <td>${st}</td>
       <td><button class="btn sm gold" onclick="editWin(null,${u.id})">当選登録</button></td></tr>`;
   });
@@ -519,12 +541,15 @@ function editEndUser(id){
     <div class="f"><label>本名（照合用）</label><input id="m-real" value="${esc(u.real_name)||''}"></div>
     ${bankField}
     <div class="f"><label>状態</label><select id="m-status">${['応募中','制限中','2本目応募中','完了','停止'].map(s=>`<option ${u.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="f"><label>参加月（初月） <span class="muted">（任意）</span></label><input id="m-start" type="number" min="1" max="12" value="${u.start_month||''}" placeholder="空欄＝週次入力があった最初の月を自動判定"><div class="hint">初月は達成回数分を支払い、2ヶ月目以降はコンプリートが支払条件になります。自動判定が実際の参加月と違うときだけ入力してください。</div></div>
   `, async ()=>{
     const eid = id||Date.now();
     const agency_id = +$('#m-agency-direct').value || null;
     if(!agency_id){ toast('所属先の代理店を選んでください'); return false; }
+    const sm=parseInt($('#m-start').value);
     const row={ id:eid, agency_id, line_name:$('#m-line').value.trim(),
-      real_name:$('#m-real').value.trim(), status:$('#m-status').value };
+      real_name:$('#m-real').value.trim(), status:$('#m-status').value,
+      start_month:(sm>=1&&sm<=12)?sm:null };
     const {error}=await SB.from('ag_end_users').upsert(row);
     if(error){ toast('失敗: '+error.message); return false; }
     if(isAdmin() && $('#m-bank')){
@@ -763,7 +788,7 @@ async function delWin(id){
 // どの月ビューにも現れない報酬＝過少支払いを防ぐため（入店完了月は available_months 外になり得る）。
 function rewardMonths(){
   const c=cfg();
-  const s=new Set((c.available_months||[]).map(Number));
+  const s=new Set(participationMonths());   // 結果SS日で繰り越された月も選べるように
   AG.endUsers.forEach(u=>AgCalc.completedWins(u.id,AG.wins,c).forEach(x=>{
     if(x.accountingMonth!=null) s.add(Number(x.accountingMonth));
   }));
@@ -795,21 +820,36 @@ function syncRewardMonthSel(){
 // ・参加報酬／代理店応募フィー … その月ぶんだけ合算（月次関数がそのまま月単位）
 // ・当選報酬／当選者フィー … completedWins を全件計算して 1件目5万/2件目以降7万の順序を確定させてから、
 //   accountingMonth（入店完了日の月）が対象月のものだけ加算（順序が月フィルタで壊れない）
+// 参加報酬が計上されうる月＝登録済みの月 ∪ 結果SS日で翌月に繰り越された月（v4）
+function participationMonths(){
+  const s=new Set((cfg().available_months||[]).map(Number));
+  AgCalc.accountingMonthsOf(AG.weekly,cfg()).forEach(m=>s.add(m));
+  return [...s].sort((a,b)=>a-b);
+}
+// 参加状態ラベル（単月表示用）。v4適用月: 初月 / コンプリート / 未完了（支払対象外）
+function partLabel(p){
+  if(!p) return '—';
+  if(!p.v4) return `改定前ルール（${p.feeWeeks}回）`;
+  if(p.isFirstMonth) return `初月（${p.feeWeeks}回）`;
+  return p.complete ? `コンプリート（${p.feeWeeks}回）` : `未完了・支払対象外（${p.feeWeeks}回）`;
+}
 function computeDetail(month){
   const c=cfg();
-  const months = (month==null) ? c.available_months.slice() : [month];
+  const months = (month==null) ? participationMonths() : [month];
   return AG.endUsers.map(u=>{
-    let euPart=0, agApp=0;
+    let euPart=0, agApp=0, part=null;
     months.forEach(m=>{
-      euPart += AgCalc.endUserMonthlyParticipation(u.id,m,AG.weekly,AG.wins,weeksOf(m),c).total;
-      agApp  += AgCalc.agencyMonthlyAppFee(u.id,m,AG.weekly,AG.wins,c).total;
+      const p=AgCalc.endUserMonthlyParticipation(u.id,m,AG.weekly,AG.wins,weeksOf(m),c,u);
+      euPart += p.total;
+      agApp  += AgCalc.agencyMonthlyAppFee(u.id,m,AG.weekly,AG.wins,c,weeksOf(m),u).total;
+      if(month!=null) part=p;
     });
     const cwAll=AgCalc.completedWins(u.id,AG.wins,c);
     const cw = (month==null) ? cwAll : cwAll.filter(x=>x.accountingMonth===month);
     let euWin=0, agWin=0; cw.forEach(x=>{euWin+=x.endUserReward; agWin+=x.agencyFee;});
     // エンドユーザーは u.agency_id で直接代理店に紐づく（ブローカー廃止）
     const agency=u.agency_id?AG.agencies.find(a=>a.id===u.agency_id):null;
-    return {u, agency, euPart, euWin, euTotal:euPart+euWin, agApp, agWin, agTotal:agApp+agWin, wins:cw.length};
+    return {u, agency, euPart, euWin, euTotal:euPart+euWin, agApp, agWin, agTotal:agApp+agWin, wins:cw.length, partStatus:partLabel(part)};
   });
 }
 function sumBy(det, keyFn, fields){
@@ -829,8 +869,8 @@ function renderRewards(){
     ah+=`<tr><td>${esc(a.name)}</td><td class="r">${yen(r.agApp)}</td><td class="r">${yen(r.agWin)}</td><td class="r"><b>${yen(r.agTotal)}</b></td></tr>`; });
   ah+=`<tr style="background:#F4EFE0"><td><b>合計</b></td><td></td><td></td><td class="r"><b>${yen(tA)}</b></td></tr></table></div>`;
   $('#rw-agency').innerHTML = AG.agencies.length?ah:'<div class="empty">代理店が未登録です</div>';
-  let eh=`<div class="tablewrap"><table><tr><th>エンド</th><th>所属</th><th class="r">参加報酬</th><th class="r">当選報酬</th><th class="r">合計</th></tr>`;
-  det.forEach(d=>{ eh+=`<tr><td>${esc(euName(d.u))}</td><td class="muted">${esc(orgLabel(d.u))}</td>
+  let eh=`<div class="tablewrap"><table><tr><th>エンド</th><th>所属</th><th>参加状態</th><th class="r">参加報酬</th><th class="r">当選報酬</th><th class="r">合計</th></tr>`;
+  det.forEach(d=>{ eh+=`<tr><td>${esc(euName(d.u))}</td><td class="muted">${esc(orgLabel(d.u))}</td><td class="muted" style="font-size:11px">${esc(d.partStatus)}</td>
     <td class="r">${yen(d.euPart)}</td><td class="r">${yen(d.euWin)}</td><td class="r"><b>${yen(d.euTotal)}</b></td></tr>`; });
   eh+='</table></div>';
   $('#rw-enduser').innerHTML = det.length?eh:'<div class="empty">エンドユーザーが未登録です</div>';
@@ -846,15 +886,15 @@ function csvAgency(){
 function csvAgencyDetail(){
   const month=rewardMonthSel();
   const det=computeDetail(month);
-  const rows=[['対象月', rewardMonthLabel(month)], [], ['代理店','エンド','LINE名','代理店応募フィー','代理店当選者フィー','小計']];
-  det.forEach(d=>rows.push([d.agency?d.agency.name:'', d.u.real_name||'', d.u.line_name||'', d.agApp, d.agWin, d.agTotal]));
+  const rows=[['対象月', rewardMonthLabel(month)], [], ['代理店','エンド','LINE名','参加状態','代理店応募フィー','代理店当選者フィー','小計']];
+  det.forEach(d=>rows.push([d.agency?d.agency.name:'', d.u.real_name||'', d.u.line_name||'', d.partStatus, d.agApp, d.agWin, d.agTotal]));
   downloadCSV(`代理店別明細_${csvSuffix(month)}.csv`, rows);
 }
 function csvEndUser(){
   const month=rewardMonthSel();
   const det=computeDetail(month);
-  const rows=[['対象月', rewardMonthLabel(month)], [], ['エンド','LINE名','所属','参加報酬','当選報酬','合計']];
-  det.forEach(d=>rows.push([d.u.real_name||'', d.u.line_name||'', orgLabel(d.u), d.euPart, d.euWin, d.euTotal]));
+  const rows=[['対象月', rewardMonthLabel(month)], [], ['エンド','LINE名','所属','参加状態','参加報酬','当選報酬','合計']];
+  det.forEach(d=>rows.push([d.u.real_name||'', d.u.line_name||'', orgLabel(d.u), d.partStatus, d.euPart, d.euWin, d.euTotal]));
   downloadCSV(`エンド報酬_${csvSuffix(month)}.csv`, rows);
 }
 function downloadCSV(name, rows){

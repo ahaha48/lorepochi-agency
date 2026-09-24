@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS ag_end_users (
   line_name  TEXT,                         -- 公式LINE名
   real_name  TEXT,                         -- 照合用の本名（機微情報）
   status     TEXT DEFAULT '応募中',
+  start_month INTEGER,                     -- v4: 参加月（初月）。NULL=週次入力があった最初の月を自動判定
   note       TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS ag_weekly (
   end_user_id    BIGINT NOT NULL REFERENCES ag_end_users(id) ON DELETE CASCADE,
   lottery_stores INTEGER DEFAULT 0,        -- 抽選SSを確認できた店舗数
   result_ss      BOOLEAN DEFAULT FALSE,    -- 結果SS確認（1タップ・真偽／1期生ロレポチと同方式）
+  result_ss_date TEXT,                     -- v4: 結果SS5枚が届いた日 YYYYMMDD（計上月の基準。NULL=入力月に計上）
   note           TEXT DEFAULT '',
   PRIMARY KEY (month, week, end_user_id)
 );
@@ -69,7 +71,8 @@ CREATE TABLE IF NOT EXISTS ag_config (
   fee_agency_weekly         INTEGER DEFAULT 1000,   -- v3: 1応募につき1,000円（4週=4,000円）
   fee_agency_win_1st        INTEGER DEFAULT 50000,
   fee_agency_win_2nd        INTEGER DEFAULT 70000, -- 入店完了2件目以降
-  restriction_days          INTEGER DEFAULT 180
+  restriction_days          INTEGER DEFAULT 180,
+  rule_v4_from_month        INTEGER DEFAULT 9      -- v4: この月以降「結果SS日で計上＋初月/コンプリート条件」。NULL で v3 に戻る
 );
 
 INSERT INTO ag_config (key) VALUES ('main') ON CONFLICT (key) DO NOTHING;

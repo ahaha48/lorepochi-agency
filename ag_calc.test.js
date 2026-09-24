@@ -6,6 +6,9 @@
  *  - v3: 月間コンプリートボーナス廃止（全週達成でも 0 円）
  *  - v3: 1応募につき エンド1,000円 / 代理店1,000円
  *  - 月上限が達成週ぶんの報酬を切り捨てないこと（最大6週=6,000円）
+ *  - v4: 計上月は結果SS日の月（月末が火曜なら翌月1日も当月）
+ *  - v4: 初月は達成回数分／2ヶ月目以降はコンプリートした月のみ支払い（未完了は0円・エンドも代理店も）
+ *  - v4: 当選週以降はコンプリート判定の対象外／改定前の月は v3 のまま／null で全期間 v3
  */
 var C = require('./ag_calc.js');
 
@@ -146,6 +149,108 @@ eq(agg5.perAgency[2],  { appFee: 4000, winFee: 0, total: 4000 }, '代理店C = U
 eq(agg5.perAgency['null'], undefined, 'perAgency に "null" キーが作られない');
 eq(agg5.perAgency['undefined'], undefined, 'perAgency に "undefined" キーが作られない');
 eq(agg5.perEndUser[200].total, 4000, '代理店直U200 の参加報酬も通常どおり 4000');
+
+
+// ================================================================
+// v4: 結果SS日で計上・初月は回数分・2ヶ月目以降はコンプリート必須
+// ================================================================
+var cfg4 = Object.assign({}, C.DEFAULT_CONFIG, { rule_v4_from_month: 9 });
+function v4Row(m, wk, eu, date, stores) {
+  return { month: m, week: wk, end_user_id: eu, lottery_stores: (stores == null ? 5 : stores), result_ss: true, result_ss_date: date || null };
+}
+var W = [1,2,3,4];
+
+console.log('v4-1: 計上月の判定（結果SS日・月末火曜の例外）');
+eq(C.accountingMonthOfResult('20260924'), 9,  '9/24 → 9月分');
+eq(C.accountingMonthOfResult('20261001'), 10, '2026-09-30は水曜 → 10/1の報告は10月分');
+eq(C.accountingMonthOfResult('20260701'), 6,  '2026-06-30は火曜 → 7/1(水)の報告は6月分（例外）');
+eq(C.accountingMonthOfResult('20260702'), 7,  '7/2 → 7月分（例外は1日だけ）');
+eq(C.accountingMonthOfResult(''), null,       '空は null');
+eq(C.rowAccountingMonth(v4Row(9,4,1,'20261006'), cfg4), 10, '9月第4週の応募でも結果SS日が10/6なら10月分');
+eq(C.rowAccountingMonth(v4Row(9,1,1,null), cfg4), 9,        '結果SS日なし（旧データ）は入力月に計上');
+eq(C.rowAccountingMonth(v4Row(8,4,1,'20260902'), cfg4), 8,  '改定前の月（8月）は結果SS日を無視して入力月');
+eq(C.v4Applies(8, cfg4), false, '8月は v3');
+eq(C.v4Applies(9, cfg4), true,  '9月から v4');
+eq(C.v4Applies(9, Object.assign({}, cfg4, { rule_v4_from_month: null })), false, 'rule_v4_from_month=null なら全期間 v3');
+
+console.log('v4-2: 初月は達成回数分を支払う（月途中参加OK）');
+var u500 = { id: 500, agency_id: 1 };
+var rows2 = [ v4Row(9,3,500,'20260929'), v4Row(9,4,500,'20261006') ];   // 9月第3週から参加。第4週の結果は10/6に報告
+var p92 = C.endUserMonthlyParticipation(500, 9, rows2, [], W, cfg4, u500);
+eq(p92.isFirstMonth, true, '9月が初月（自動判定）');
+eq(p92.feeWeeks, 1,        '9月分のカウント = 1（第4週の結果は10月分に繰り越し）');
+eq(p92.total, 1000,        '初月は未完了でも 1000×1 = 1000');
+eq(C.agencyMonthlyAppFee(500, 9, rows2, [], cfg4, W, u500).total, 1000, '代理店応募フィーも 1000');
+eq(C.firstMonthOf(500, rows2, u500), 9, '参加月の自動判定 = 9');
+
+console.log('v4-3: 2ヶ月目コンプリート → 支払い／未完了 → 0円（回数は保持）');
+var rows3 = rows2.concat([ v4Row(10,1,500,'20261013'), v4Row(10,2,500,'20261020'), v4Row(10,3,500,'20261027'), v4Row(10,4,500,'20261103') ]);
+var p10 = C.endUserMonthlyParticipation(500, 10, rows3, [], W, cfg4, u500);
+eq(p10.isFirstMonth, false, '10月は2ヶ月目');
+eq(p10.complete, true,      '10月は全4週達成 → コンプリート');
+eq(p10.feeWeeks, 4,         '10月分カウント = 9月第4週(10/6) + 10月第1〜3週 = 4');
+eq(p10.total, 4000,         '10月 = 1000×4 = 4000');
+eq(C.agencyMonthlyAppFee(500, 10, rows3, [], cfg4, W, u500).total, 4000, '代理店も 4000');
+var p11 = C.endUserMonthlyParticipation(500, 11, rows3, [], W, cfg4, u500);
+eq(p11.feeWeeks, 1,     '11月分カウント = 10月第4週(11/3報告) の1回');
+eq(p11.complete, false, '11月は未完了（11月の応募が無い）');
+eq(p11.total, 0,        '未完了の月は 0 円（11月を完了すれば 1000 になる）');
+var rows3b = rows3.filter(function (r) { return !(r.month === 10 && r.week === 2); });   // 10月第2週を抜く
+var p10b = C.endUserMonthlyParticipation(500, 10, rows3b, [], W, cfg4, u500);
+eq(p10b.complete, false, '10月第2週が抜けると未完了');
+eq(p10b.feeWeeks, 3,     '回数は 3 として保持（表示用）');
+eq(p10b.total, 0,        '★未完了月はエンド 0 円');
+eq(C.agencyMonthlyAppFee(500, 10, rows3b, [], cfg4, W, u500).total, 0, '★未完了月は代理店も 0 円');
+var rows3c = rows3b.concat([ v4Row(10,2,500,'20261020',3) ]);   // 第2週を3店舗（未達成）で戻す
+eq(C.endUserMonthlyParticipation(500, 10, rows3c, [], W, cfg4, u500).total, 0, '第2週が3店舗（未達成）でも未完了 → 0 円');
+
+console.log('v4-4: 途中当選（当選週以降はコンプリート判定の対象外）');
+var u600 = { id: 600, agency_id: 1 };
+var rows4 = [ v4Row(8,1,600,null), v4Row(8,3,600,null),                          // 8月（v3・旧データ）
+              v4Row(10,1,600,'20261013'), v4Row(10,2,600,'20261020') ];          // 10月は第2週まで
+var wins4 = [{ id: 9, end_user_id: 600, won_date: '20261021', shop: '銀座並木通り', month: 10, week: 3, store_entry_completed: false }];
+var p4 = C.endUserMonthlyParticipation(600, 10, rows4, wins4, W, cfg4, u600);
+eq(p4.isFirstMonth, false, '初月は8月なので10月は2ヶ月目以降');
+eq(p4.complete, true,      '第3週で当選 → 第3・4週は判定対象外 → コンプリート扱い');
+eq(p4.total, 2000,         '当選前の2回分 = 2000 を支払う');
+eq(C.endUserMonthlyParticipation(600, 10, rows4.concat([v4Row(10,3,600,'20261027')]), wins4, W, cfg4, u600).feeWeeks, 2, '当選週の行はカウントしない');
+
+console.log('v4-5: 改定前の月は旧ルール（未完了でも達成分を支払う）');
+var p8 = C.endUserMonthlyParticipation(600, 8, rows4, [], W, cfg4, u600);
+eq(p8.v4, false,   '8月は v3 判定');
+eq(p8.total, 2000, '8月は第1・3週だけでも 1000×2 = 2000（コンプリート条件なし）');
+eq(C.agencyMonthlyAppFee(600, 8, rows4, [], cfg4, W, u600).total, 2000, '代理店も 2000');
+
+console.log('v4-6: rule_v4_from_month=null なら未完了月も従来どおり支払う（ロールバック）');
+var cfgNull = Object.assign({}, cfg4, { rule_v4_from_month: null });
+eq(C.endUserMonthlyParticipation(500, 10, rows3b, [], W, cfgNull, u500).total, 3000, 'v3: 10月は達成3週 = 3000');
+eq(C.endUserMonthlyParticipation(500, 9, rows3b, [], W, cfgNull, u500).total, 2000,  'v3: 結果SS日を無視して9月は2週 = 2000');
+
+console.log('v4-7: 参加月の手動指定（start_month）');
+var u700 = { id: 700, agency_id: 1 };
+var rows7 = [ v4Row(9,1,700,'20260908'), v4Row(9,2,700,'20260915'), v4Row(9,3,700,'20260922'), v4Row(9,4,700,'20261006'),
+              v4Row(10,1,700,'20261013'), v4Row(10,2,700,'20261020') ];
+eq(C.endUserMonthlyParticipation(700, 10, rows7, [], W, cfg4, u700).total, 0, '自動判定（初月9月）→ 10月は未完了 = 0');
+var u700b = Object.assign({}, u700, { start_month: 10 });
+var p7 = C.endUserMonthlyParticipation(700, 10, rows7, [], W, cfg4, u700b);
+eq(p7.isFirstMonth, true, 'start_month=10 → 10月を初月として扱う');
+eq(p7.total, 3000,        '初月 = 9月第4週の繰越 + 10月第1・2週 = 3000');
+eq(C.endUserMonthlyParticipation(700, 9, rows7, [], W, cfg4, u700b).total, 3000, 'start_month より前の月も初月扱い（回数分を支払う）');
+
+console.log('v4-8: aggregate が結果SS日で繰り越した月を落とさない');
+var s8 = {
+  agencies: [{ id: 1, name: 'TMサロン' }],
+  endUsers: [u500],
+  weeksPerMonth: { 9: [1,2,3,4], 10: [1,2,3,4] },   // 11月はまだ未登録
+  weekly: rows3, wins: [],
+};
+eq(C.accountingMonthsOf(rows3, cfg4), [9,10,11], '計上月一覧 = 9,10,11（11月は繰り越し先）');
+var agg8 = C.aggregate(s8, cfg4);
+eq(agg8.perEndUser[500].participation, 5000, '9月1000 + 10月4000 + 11月0（未完了）= 5000');
+eq(agg8.perAgency[1], { appFee: 5000, winFee: 0, total: 5000 }, '代理店TMサロン = 5000');
+var s8b = Object.assign({}, s8, { weeksPerMonth: { 9: [1,2,3,4], 10: [1,2,3,4], 11: [1,2,3,4] },
+  weekly: rows3.concat([ v4Row(11,1,500,'20261110'), v4Row(11,2,500,'20261117'), v4Row(11,3,500,'20261124'), v4Row(11,4,500,'20261201') ]) });
+eq(C.aggregate(s8b, cfg4).perEndUser[500].participation, 9000, '11月をコンプリートすると 10月第4週分＋11月第1〜3週 = 4000 が加わり 9000');
 
 console.log('\n結果: ' + pass + ' 件成功 / ' + fail + ' 件失敗');
 process.exit(fail === 0 ? 0 : 1);
