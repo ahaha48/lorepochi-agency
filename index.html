@@ -733,8 +733,11 @@ function editAgency(id){
 }
 async function delAgency(id){
   const a=AG.agencies.find(x=>x.id===id);
-  const n=AG.endUsers.filter(u=>u.agency_id===id).length;
   // 所属がいる代理店は削除できない（DB は連鎖削除の設計なので、誤って人ごと消さないための防波堤）
+  // 画面のメモリではなく DB から所属人数を取り直す（他の人が直前に追加した分も拾う）
+  const {data:cur,error:ce}=await SB.from('ag_end_users').select('id').eq('agency_id',id);
+  if(ce){ toast('所属人数の確認に失敗: '+ce.message); return; }
+  const n=(cur||[]).length;
   if(n>0){ toast(`「${a.name}」には ${n} 人のエンドユーザーが所属しています。先に全員の所属を変えてから削除してください`); return; }
   confirmModal(`代理店「${esc(a.name)}」を削除しますか？<br><span class="muted">所属エンドユーザーは 0 人です。</span>`, async ()=>{
     if(isAdmin()){
