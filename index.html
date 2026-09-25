@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ロレポチ 代理店版</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="ag_calc.js"></script>
+<script src="ag_calc.js?v=20260925b"></script>
 <style>
   :root{
     --green:#0B5C3B; --green-dark:#063D27; --green-light:#127A4C;
@@ -215,7 +215,7 @@
         <p class="muted" style="font-size:12px;margin-top:10px">
           ※「当選登録」で当選を登録すると、その週以降は応募フィーが停止します（当選前の週の報酬は保持されます）。<br>
           ※ 結果SS✓を押すと、その日が「結果SS日」として記録されます（日付欄で変更可）。カウントは結果SS日の月に計上されます。月末が火曜日の場合は翌月1日（水曜）の報告も当月扱いです。<br>
-          ※ 初月は達成回数分を支払い。2ヶ月目以降は、その月の全週を達成（コンプリート）した場合のみ支払対象になります。未完了の月は 0 円です。
+          ※ 初月は達成回数分を支払い。2ヶ月目以降は、その月の全週を達成（コンプリート）した場合のみ支払対象になります。未完了の月は 0 円です。このコンプリート条件は10月分から適用し、9月分は結果SS日で計上した回数分を支払います。
         </p>
       </section>
 
@@ -350,7 +350,8 @@ const CFG_DEFAULT = { key:'main', cur_month:1, cur_week:1, available_months:[1],
   weeks_per_month:{"1":[1,2,3,4]}, required_stores:5, fee_enduser_weekly:1000,
   fee_enduser_monthly_bonus:0, cap_enduser_monthly:6000, reward_enduser_win:20000,
   fee_agency_weekly:1000, fee_agency_win_1st:50000, fee_agency_win_2nd:70000, restriction_days:180,
-  rule_v4_from_month:9 };   // v4: この月以降「結果SS日で計上＋初月/コンプリート条件」。null で v3
+  rule_v4_from_month:9,             // v4: この月以降「結果SS日で計上」(②)。null で v3
+  rule_v4_complete_from_month:10 }; // v4b: この月以降「初月は回数分／2ヶ月目以降はコンプリート必須」(③)。null で③オフ
 let AG = { agencies:[], endUsers:[], weekly:[], wins:[], bankAccounts:[], config:Object.assign({},CFG_DEFAULT) };
 
 // 銀行口座を閲覧・編集できる管理者（RLSでもDB側で強制。ここはUI表示制御用）
@@ -541,7 +542,7 @@ function editEndUser(id){
     <div class="f"><label>本名（照合用）</label><input id="m-real" value="${esc(u.real_name)||''}"></div>
     ${bankField}
     <div class="f"><label>状態</label><select id="m-status">${['応募中','制限中','2本目応募中','完了','停止'].map(s=>`<option ${u.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
-    <div class="f"><label>参加月（初月） <span class="muted">（任意）</span></label><input id="m-start" type="number" min="1" max="12" value="${u.start_month||''}" placeholder="空欄＝週次入力があった最初の月を自動判定"><div class="hint">初月は達成回数分を支払い、2ヶ月目以降はコンプリートが支払条件になります。自動判定が実際の参加月と違うときだけ入力してください。</div></div>
+    <div class="f"><label>参加月（初月） <span class="muted">（任意）</span></label><input id="m-start" type="number" min="1" max="12" value="${u.start_month||''}" placeholder="空欄＝週次入力があった最初の月を自動判定"><div class="hint">初月は達成回数分を支払い、2ヶ月目以降はコンプリートが支払条件になります（10月分から）。自動判定が実際の参加月と違うときだけ入力してください。</div></div>
   `, async ()=>{
     const eid = id||Date.now();
     const agency_id = +$('#m-agency-direct').value || null;
@@ -830,6 +831,7 @@ function participationMonths(){
 function partLabel(p){
   if(!p) return '—';
   if(!p.v4) return `改定前ルール（${p.feeWeeks}回）`;
+  if(!p.completeRule) return `回数分（${p.feeWeeks}回）`;   // ③適用前の月（9月分）はコンプリート条件なし
   if(p.isFirstMonth) return `初月（${p.feeWeeks}回）`;
   return p.complete ? `コンプリート（${p.feeWeeks}回）` : `未完了・支払対象外（${p.feeWeeks}回）`;
 }

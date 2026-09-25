@@ -29,6 +29,12 @@
  *      コンプリート判定 = その月の全週で条件達成（当選週以降は判定対象外）
  *  - 参加月は start_month（手動指定）＞ 週次入力で活動があった最初の月（自動）
  *  - 単価はエンド1,000円／代理店1,000円のまま。当選まわりも変更なし
+ *
+ * v4b（③の適用開始月を②から分離）:
+ *  - ②「結果SS日で計上」は rule_v4_from_month（9月）から
+ *  - ③「初月は回数分／2ヶ月目以降はコンプリート必須」は rule_v4_complete_from_month（10月）から
+ *      ②だけ適用の月（9月）は、計上カウント×単価をそのまま支払う（コンプリート条件なし）
+ *      null で③を全期間オフ。キー未設定（undefined）なら rule_v4_from_month と同じ月から③を適用
  * ================================================================ */
 (function (global) {
   'use strict';
@@ -43,7 +49,8 @@
     fee_agency_win_1st: 50000,
     fee_agency_win_2nd: 70000, // 入店完了2件目以降（3件目以降も暫定同額。将来ルール要確認）
     restriction_days: 180,
-    rule_v4_from_month: 9,          // v4: この月以降に「結果SS日計上＋コンプリート条件」を適用。null で無効
+    rule_v4_from_month: 9,          // v4: この月以降に「結果SS日で計上」(②) を適用。null で v4 全体を無効
+    rule_v4_complete_from_month: 10, // v4b: この月以降に「初月は回数分／2ヶ月目以降はコンプリート必須」(③) を適用。null で③をオフ
   };
 
   // (aM,aW) <= (bM,bW)
@@ -93,6 +100,15 @@
   // その月に v4 ルールを適用するか（入力月 row.month で判定する）
   function v4Applies(month, cfg) {
     return cfg.rule_v4_from_month != null && month >= cfg.rule_v4_from_month;
+  }
+
+  // ③（初月は回数分／2ヶ月目以降はコンプリート必須）をその月に適用するか。
+  // ②が適用されている月のうち rule_v4_complete_from_month 以降。null なら全期間オフ。
+  // キー未設定（undefined）なら rule_v4_from_month と同じ月から（旧挙動）
+  function completeRuleApplies(month, cfg) {
+    if (!v4Applies(month, cfg)) return false;
+    var from = (cfg.rule_v4_complete_from_month === undefined) ? cfg.rule_v4_from_month : cfg.rule_v4_complete_from_month;
+    return from != null && month >= from;
   }
 
   // 結果SS日 → 計上月。月末が火曜日なら、翌月1日（水曜）の報告は前月扱い
@@ -154,8 +170,10 @@
     var fm = firstMonthOf(endUserId, weeklyRows, endUser);
     var isFirst = fm == null || month <= fm;
     var complete = isFirst ? true : isMonthComplete(endUserId, month, weeklyRows, wins, weeksOfMonth, cfg);
+    // ③がまだ適用されない月（9月分）は、未完了でも計上カウント分をそのまま支払う
+    var useComplete = completeRuleApplies(month, cfg);
     return { count: rows.length, rows: rows, firstMonth: fm, isFirstMonth: isFirst,
-             complete: complete, payable: isFirst || complete };
+             complete: complete, completeRule: useComplete, payable: !useComplete || isFirst || complete };
   }
 
   // 週次入力から計上されうる月の一覧（昇順）。結果SS日で翌月に繰り越された月も含む
@@ -178,7 +196,7 @@
       var sum = st.count * cfg.fee_enduser_weekly;
       return {
         weekly: sum, bonus: 0, feeWeeks: st.count, v4: true,
-        firstMonth: st.firstMonth, isFirstMonth: st.isFirstMonth, complete: st.complete, payable: st.payable,
+        firstMonth: st.firstMonth, isFirstMonth: st.isFirstMonth, complete: st.complete, completeRule: st.completeRule, payable: st.payable,
         total: st.payable ? Math.min(sum, cfg.cap_enduser_monthly) : 0
       };
     }
@@ -206,7 +224,7 @@
   function agencyMonthlyAppFee(endUserId, month, weeklyRows, wins, cfg, weeksOfMonth, endUser) {
     if (v4Applies(month, cfg)) {
       var st = monthlyStatus(endUserId, month, weeklyRows, wins, weeksOfMonth, cfg, endUser);
-      return { feeWeeks: st.count, v4: true, isFirstMonth: st.isFirstMonth, complete: st.complete, payable: st.payable,
+      return { feeWeeks: st.count, v4: true, isFirstMonth: st.isFirstMonth, complete: st.complete, completeRule: st.completeRule, payable: st.payable,
                total: st.payable ? st.count * cfg.fee_agency_weekly : 0 };
     }
     var rows = weeklyRows.filter(function (r) { return r.end_user_id === endUserId && r.month === month; });
@@ -290,7 +308,7 @@
   var API = {
     DEFAULT_CONFIG: DEFAULT_CONFIG, weekLE: weekLE, conditionMet: conditionMet,
     hasWinByWeek: hasWinByWeek, feeApplies: feeApplies,
-    v4Applies: v4Applies, accountingMonthOfResult: accountingMonthOfResult, rowAccountingMonth: rowAccountingMonth,
+    v4Applies: v4Applies, completeRuleApplies: completeRuleApplies, accountingMonthOfResult: accountingMonthOfResult, rowAccountingMonth: rowAccountingMonth,
     firstMonthOf: firstMonthOf, monthlyCountRows: monthlyCountRows, isMonthComplete: isMonthComplete,
     monthlyStatus: monthlyStatus, accountingMonthsOf: accountingMonthsOf,
     endUserMonthlyParticipation: endUserMonthlyParticipation,

@@ -72,7 +72,8 @@ CREATE TABLE IF NOT EXISTS ag_config (
   fee_agency_win_1st        INTEGER DEFAULT 50000,
   fee_agency_win_2nd        INTEGER DEFAULT 70000, -- 入店完了2件目以降
   restriction_days          INTEGER DEFAULT 180,
-  rule_v4_from_month        INTEGER DEFAULT 9      -- v4: この月以降「結果SS日で計上＋初月/コンプリート条件」。NULL で v3 に戻る
+  rule_v4_from_month        INTEGER DEFAULT 9,     -- v4: この月以降「結果SS日で計上」(②)。NULL で v3 に戻る
+  rule_v4_complete_from_month INTEGER DEFAULT 10   -- v4b: この月以降「初月は回数分／2ヶ月目以降はコンプリート必須」(③)。NULL で③オフ
 );
 
 INSERT INTO ag_config (key) VALUES ('main') ON CONFLICT (key) DO NOTHING;
