@@ -257,14 +257,49 @@
   }
 
   // 制限（解除期間）
+  //   起点 = 入店完了日（basis:'entry'）、無ければ当選日（basis:'won'）。どちらも無ければ null
   function restriction(win, cfg, todayYMD) {
-    var base = (win.store_entry_completed && win.store_entry_date) ? win.store_entry_date : win.won_date;
+    var entry = !!(win.store_entry_completed && win.store_entry_date);
+    var base = entry ? win.store_entry_date : win.won_date;
     var baseD = parseYMD(base);
     if (!baseD) return null;
     var release = addDays(baseD, cfg.restriction_days);
     var remaining = daysBetween(parseYMD(todayYMD), release);
-    return { base: base, releaseDate: fmtYMD(release), remaining: remaining,
+    return { base: base, basis: entry ? 'entry' : 'won', releaseDate: fmtYMD(release), remaining: remaining,
              soon: remaining >= 0 && remaining <= 7, released: remaining < 0 };
+  }
+
+  // 表示用ステータス。手動の「停止」「完了」はそのまま。それ以外は制限中なら「制限中」、でなければ手動の値
+  function displayStatus(manual, restricted) {
+    if (manual === '停止' || manual === '完了') return manual;
+    if (restricted) return '制限中';
+    return manual || '';
+  }
+
+  // 週の入力状況（ダッシュボード用）
+  //   applied=必要店舗数以上に応募した人数 / resultSS=結果SS✓の人数 / met=両方そろった人数
+  //   feeOn=達成かつ当選前（フィー対象）の人数 / winners=その週に当選登録された人数（重複除く）
+  function weekStats(weeklyRows, wins, cfg, month, week) {
+    var rows = weeklyRows.filter(function (r) { return r.month === month && r.week === week; });
+    var applied = 0, resultSS = 0, met = 0, feeOn = 0;
+    rows.forEach(function (r) {
+      if ((r.lottery_stores || 0) >= cfg.required_stores) applied++;
+      if (r.result_ss === true) resultSS++;
+      if (conditionMet(r, cfg)) met++;
+      if (feeApplies(r, wins, cfg)) feeOn++;
+    });
+    var winnerIds = {};
+    wins.forEach(function (w) { if (w.month === month && w.week === week) winnerIds[w.end_user_id] = true; });
+    return { rows: rows.length, applied: applied, resultSS: resultSS, met: met, feeOn: feeOn,
+             winners: Object.keys(winnerIds).length };
+  }
+
+  // 登録済み週リスト（[{month,week},...] 昇順）の中で (month,week) の1つ前。先頭または未登録なら null
+  function prevWeekOf(weekList, month, week) {
+    for (var i = 0; i < weekList.length; i++) {
+      if (weekList[i].month === month && weekList[i].week === week) return i > 0 ? weekList[i - 1] : null;
+    }
+    return null;
   }
 
   // 全体集計（代理店別・エンドユーザー別）
@@ -314,6 +349,7 @@
     endUserMonthlyParticipation: endUserMonthlyParticipation,
     agencyMonthlyAppFee: agencyMonthlyAppFee, completedWins: completedWins,
     pendingWins: pendingWins, restriction: restriction, aggregate: aggregate,
+    displayStatus: displayStatus, weekStats: weekStats, prevWeekOf: prevWeekOf,
     parseYMD: parseYMD, addDays: addDays, fmtYMD: fmtYMD, daysBetween: daysBetween, calMonth: calMonth
   };
 

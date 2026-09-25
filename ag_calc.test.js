@@ -317,5 +317,45 @@ var s9 = { agencies: [{ id: 1, name: 'TMサロン' }], endUsers: [u800],
 eq(C.aggregate(s9, cfg4b).perEndUser[800].participation, 5000, '7月1000 + 8月1000 + 9月3000 + 10月0（未完了）= 5000');
 eq(C.aggregate(s9, cfgNull).perEndUser[800].participation, 8000, 'null（③オフ）なら 10月も3000 が加わり 8000');
 
+console.log('制限の起点種別（basis）・表示用ステータス・週の統計');
+var rE = C.restriction({ won_date: '20260816', store_entry_completed: true, store_entry_date: '20260823' }, cfg, '20260925');
+eq(rE.basis, 'entry', '入店完了あり → 起点は入店完了日（entry）');
+eq(rE.base, '20260823', '起点日 = 入店完了日');
+eq(rE.remaining, 147, '20260823 + 180日 = 20270219、本日20260925からの残り = 147日');
+var rW = C.restriction({ won_date: '20260816', store_entry_completed: false, store_entry_date: null }, cfg, '20260925');
+eq(rW.basis, 'won', '入店未完了 → 起点は当選日（won）');
+eq(rW.remaining, 140, '20260816 + 180日 = 20270212 → 残り140日');
+eq(C.restriction({ won_date: '', store_entry_completed: false }, cfg, '20260925'), null, '当選日も入店完了日も無ければ null（制限なし）');
+eq(C.restriction({ won_date: '20260101' }, cfg, '20260925').released, true, '180日経過 → released');
+eq(C.displayStatus('応募中', true),  '制限中', '応募中 × 制限中 → 制限中');
+eq(C.displayStatus('応募中', false), '応募中', '応募中 × 制限なし → 応募中');
+eq(C.displayStatus('停止', true),    '停止',   '停止は制限中でも停止のまま');
+eq(C.displayStatus('完了', true),    '完了',   '完了は制限中でも完了のまま');
+eq(C.displayStatus('2本目応募中', true), '制限中', '2本目応募中 × 制限中 → 制限中');
+eq(C.displayStatus(null, false), '', '手動なし × 制限なし → 空');
+var wkRows = [
+  { month: 9, week: 4, end_user_id: 1, lottery_stores: 5, result_ss: true  },   // 達成・フィー対象
+  { month: 9, week: 4, end_user_id: 2, lottery_stores: 5, result_ss: false },   // 応募のみ
+  { month: 9, week: 4, end_user_id: 3, lottery_stores: 3, result_ss: true  },   // 店舗不足
+  { month: 9, week: 4, end_user_id: 4, lottery_stores: 5, result_ss: true  },   // 達成だが当選済み（フィー停止）
+  { month: 9, week: 3, end_user_id: 1, lottery_stores: 5, result_ss: true  },   // 前週
+];
+var wkWins = [ { end_user_id: 4, won_date: '20260907', month: 9, week: 1 }, { end_user_id: 4, won_date: '20260907', month: 9, week: 1 },
+               { end_user_id: 5, won_date: '20260922', month: 9, week: 4 } ];
+var ws = C.weekStats(wkRows, wkWins, cfg, 9, 4);
+eq(ws.rows, 4,     '今週の入力行 = 4');
+eq(ws.applied, 3,  '申込完了（5店舗以上）= 3');
+eq(ws.resultSS, 3, '結果SS✓ = 3');
+eq(ws.met, 2,      '達成（両方）= 2');
+eq(ws.feeOn, 1,    'フィー対象（達成かつ当選前）= 1');
+eq(ws.winners, 1,  '今週の当選者 = 1（第4週の当選のみ）');
+eq(C.weekStats(wkRows, wkWins, cfg, 9, 1).winners, 1, '第1週の当選者は重複除いて1名');
+eq(C.weekStats(wkRows, wkWins, cfg, 9, 3).applied, 1, '前週の申込完了 = 1');
+var wl = [ {month:8,week:3}, {month:8,week:4}, {month:9,week:1}, {month:9,week:2} ];
+eq(C.prevWeekOf(wl, 9, 1), {month:8,week:4}, '9月第1週の前週 = 8月第4週（月またぎ）');
+eq(C.prevWeekOf(wl, 9, 2), {month:9,week:1}, '9月第2週の前週 = 9月第1週');
+eq(C.prevWeekOf(wl, 8, 3), null,             '先頭の週の前週は null');
+eq(C.prevWeekOf(wl, 10, 1), null,            '未登録の週は null');
+
 console.log('\n結果: ' + pass + ' 件成功 / ' + fail + ' 件失敗');
 process.exit(fail === 0 ? 0 : 1);

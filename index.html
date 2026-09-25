@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ロレポチ 代理店版</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="ag_calc.js?v=20260925b"></script>
+<script src="ag_calc.js?v=20260925c"></script>
 <style>
   :root{
     --green:#0B5C3B; --green-dark:#063D27; --green-light:#127A4C;
@@ -189,6 +189,12 @@
       <section id="sec-dash" class="show">
         <h2 class="sec">📊 ダッシュボード</h2>
         <div class="grid kpis" id="dash-kpis"></div>
+        <p class="muted" style="font-size:12px;margin:16px 0 6px">📈 今週のうごき（<span id="dash-week-label"></span>）　※「今週」は画面右上の対象月・週です</p>
+        <div class="grid kpis" id="dash-week"></div>
+        <div class="card">
+          <div class="h">🏆 当選者（制限期間中の当選・名前つき）</div>
+          <div id="dash-winners"></div>
+        </div>
         <div class="card">
           <div class="h">🏢 代理店別 支払い見込み（弊社→代理店）</div>
           <div id="dash-agency"></div>
@@ -283,7 +289,7 @@
       <!-- SEGMENT -->
       <section id="sec-segment">
         <h2 class="sec">🎯 セグメント抽出</h2>
-        <p class="muted" style="font-size:12px;margin:-6px 0 14px">AND条件で絞り込み → LINE一斉送信リストを作成（読み取り専用・出力のみ）。稼働率の基準は「登録済みの最新週」です。</p>
+        <p class="muted" style="font-size:12px;margin:-6px 0 14px">AND条件で絞り込み → LINE一斉送信リストを作成（読み取り専用・出力のみ）。稼働率の基準は「登録済みの最新週」です。「制限中」は当選登録（入店完了日、なければ当選日）から180日間、自動で判定します。</p>
 
         <div class="card">
           <div class="h">よく使う抽出パターン</div>
@@ -402,6 +408,8 @@ function cfg(){ return AG.config; }
 
 /* ---------- month / week ---------- */
 function weeksOf(m){ return (cfg().weeks_per_month[m] || cfg().weeks_per_month[String(m)] || [1,2,3,4]); }
+// 登録済みの (month,week) を昇順で並べたリスト（前週の判定に使う）
+function weekList(){ const ms=(cfg().available_months||[]).slice().sort((a,b)=>a-b); const out=[]; ms.forEach(m=>weeksOf(m).slice().sort((a,b)=>a-b).forEach(w=>out.push({month:m,week:w}))); return out; }
 function buildMWSelectors(){
   const ms=cfg().available_months.slice().sort((a,b)=>a-b);
   $('#sel-month').innerHTML = ms.map(m=>`<option value="${m}" ${m===cfg().cur_month?'selected':''}>${m}月</option>`).join('')
@@ -520,12 +528,14 @@ function renderEndUsers(){
   const t=$('#eu-table');
   if(!list.length){ t.innerHTML=`<tr><td class="empty">${q?'検索に一致するエンドユーザーはいません':'まだ登録がありません'}</td></tr>`; return; }
   let h=`<tr><th>LINE名</th><th>本名</th><th>所属</th><th>備考</th><th>口座情報</th><th>状態</th><th>操作</th></tr>`;
+  const today=todayYMD();
   list.forEach(u=>{
+    const st=euDisplayStatus(u, today);   // 制限中は当選登録から自動判定
     h+=`<tr><td>${esc(u.line_name)||'—'}</td><td>${esc(u.real_name)||'—'}</td>
       <td class="muted">${esc(orgLabel(u))}</td>
       <td class="muted" style="font-size:11px;white-space:normal;max-width:220px">${esc(u.note)||''}</td>
       <td class="pii">${isAdmin()?(reveal?(esc(bankOf('end_user',u.id))||'—'):mask(bankOf('end_user',u.id))):'🔒'}</td>
-      <td><span class="badge b-no">${esc(u.status)||'—'}</span></td>
+      <td><span class="badge ${st==='制限中'?'b-soon':'b-no'}">${esc(st)||'—'}</span></td>
       <td class="rowbtns"><button class="btn sm ghost" onclick="editEndUser(${u.id})">編集</button>
       <button class="btn sm danger" onclick="delEndUser(${u.id})">削除</button></td></tr>`;
   });
@@ -541,7 +551,7 @@ function editEndUser(id){
     <div class="f"><label>公式LINE名</label><input id="m-line" value="${esc(u.line_name)||''}"></div>
     <div class="f"><label>本名（照合用）</label><input id="m-real" value="${esc(u.real_name)||''}"></div>
     ${bankField}
-    <div class="f"><label>状態</label><select id="m-status">${['応募中','制限中','2本目応募中','完了','停止'].map(s=>`<option ${u.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="f"><label>状態</label><select id="m-status">${['応募中','2本目応募中','完了','停止'].concat(u.status==='制限中'?['制限中']:[]).map(s=>`<option ${u.status===s?'selected':''}>${s}</option>`).join('')}</select><div class="hint">「制限中」は手入力ではなく、当選登録（入店完了日、なければ当選日）から${cfg().restriction_days}日間、自動で表示されます。</div></div>
     <div class="f"><label>参加月（初月） <span class="muted">（任意）</span></label><input id="m-start" type="number" min="1" max="12" value="${u.start_month||''}" placeholder="空欄＝週次入力があった最初の月を自動判定"><div class="hint">初月は達成回数分を支払い、2ヶ月目以降はコンプリートが支払条件になります（10月分から）。自動判定が実際の参加月と違うときだけ入力してください。</div></div>
   `, async ()=>{
     const eid = id||Date.now();
@@ -939,6 +949,29 @@ function renderDash(){
     ['保留（入店未完了）',pend+'件',''],['まもなく解除',soon+'件','']
   ];
   $('#dash-kpis').innerHTML=kpi.map(k=>`<div class="kpi"><div class="lab">${k[0]}</div><div class="val ${k[2]}">${k[1]}</div></div>`).join('');
+  // 今週のうごき（1期生ツールと同じ並び）: 申込完了（必要店舗数以上）／前週比／結果SS報告／達成（フィー対象）／当選者
+  const m=cfg().cur_month, wk=cfg().cur_week;
+  const ws=AgCalc.weekStats(AG.weekly,AG.wins,cfg(),m,wk);
+  const pw=AgCalc.prevWeekOf(weekList(),m,wk);
+  const pws=pw?AgCalc.weekStats(AG.weekly,AG.wins,cfg(),pw.month,pw.week):null;
+  const hasPrev=!!(pws&&pws.rows>0);
+  const delta=hasPrev?ws.applied-pws.applied:null;
+  const deltaTxt=delta==null?'—':(delta>0?'▲ +'+delta:delta<0?'▼ '+delta:'±0');
+  $('#dash-week-label').textContent=`${m}月 第${wk}週`;
+  const wkpi=[
+    ['申込完了（'+cfg().required_stores+'店舗以上）',ws.applied+'名',''],
+    [hasPrev?`前週比（${pw.month}月第${pw.week}週 ${pws.applied}名）`:(pw?`前週比（${pw.month}月第${pw.week}週 入力なし）`:'前週比（前週なし）'),deltaTxt,''],
+    ['結果SS報告',ws.resultSS+'名',''],['達成（フィー対象）',ws.feeOn+'名','gold'],['当選者',ws.winners+'名','']
+  ];
+  $('#dash-week').innerHTML=wkpi.map(k=>`<div class="kpi"><div class="lab">${k[0]}</div><div class="val ${k[2]}">${k[1]}</div></div>`).join('');
+  // 当選者（制限期間中＝起点から180日以内の当選）を名前つきで一覧。180日を過ぎた当選は自然に消える
+  const wl=AG.wins.map(w=>{const u=AG.endUsers.find(x=>x.id===w.end_user_id);const r=AgCalc.restriction(w,cfg(),ty);return{w,u,r};})
+    .filter(x=>x.r&&!x.r.released).sort((a,b)=>(''+(b.w.won_date||'')).localeCompare(''+(a.w.won_date||'')));
+  if(!wl.length){ $('#dash-winners').innerHTML='<div class="empty">当選者はいません</div>'; }
+  else { $('#dash-winners').innerHTML=`<div class="tablewrap"><table><tr><th>エンド</th><th>所属</th><th>当選日</th><th>店舗</th><th>状態</th><th>制限解除予定</th></tr>`+
+    wl.map(x=>`<tr><td><b>${esc(x.u?euName(x.u):'ID'+x.w.end_user_id)}</b></td><td class="muted">${esc(x.u?orgLabel(x.u):'—')}</td><td>${fmtDate(x.w.won_date)}</td><td>${esc(x.w.shop)||'—'}</td>`+
+      `<td>${x.w.store_entry_completed?'<span class="badge b-ok">入店完了</span>':'<span class="badge b-soon">保留（入店未完了）</span>'}</td>`+
+      `<td class="muted">${fmtDate(x.r.releaseDate)}（残${x.r.remaining}日）</td></tr>`).join('')+'</table></div>'; }
   const byA=sumBy(det,d=>d.agency?d.agency.id:0,['agApp','agWin','agTotal']);
   let ah=`<div class="tablewrap"><table><tr><th>代理店</th><th class="r">応募フィー</th><th class="r">当選者フィー</th><th class="r">支払合計</th></tr>`;
   AG.agencies.forEach(a=>{ const r=byA[a.id]||{}; ah+=`<tr><td>${esc(a.name)}</td><td class="r">${yen(r.agApp||0)}</td><td class="r">${yen(r.agWin||0)}</td><td class="r"><b>${yen(r.agTotal||0)}</b></td></tr>`; });
@@ -1031,18 +1064,28 @@ function euRestrictDaysLeft(euId, today){
   const rs=AG.wins.filter(w=>w.end_user_id===euId).map(w=>AgCalc.restriction(w,cfg(),today)).filter(r=>r && !r.released);
   return rs.length ? Math.min.apply(null, rs.map(r=>r.remaining)) : null;
 }
+// 制限中の起点種別: 'entry'=入店完了（買付済み）が1件でもあれば entry、なければ 'won'（当選日起点のみ）、制限中でなければ null
+function euRestrictBasis(euId, today){
+  const rs=AG.wins.filter(w=>w.end_user_id===euId).map(w=>AgCalc.restriction(w,cfg(),today)).filter(r=>r && !r.released);
+  if(!rs.length) return null;
+  return rs.some(r=>r.basis==='entry') ? 'entry' : 'won';
+}
+// 表示用ステータス（一覧・セグメント共通）。制限中は当選登録から自動判定し、手動の「停止」「完了」は優先
+function euDisplayStatus(u, today){ return AgCalc.displayStatus(u.status, euRestrictState(u.id, today)==='restricted'); }
 const SEG_PRESETS={
   all:              {label:'全員', fn:()=>true},
   active_all:       {label:'アクティブ全員', fn:c=>c.active},
   inactive_all:     {label:'非アクティブ全員', fn:c=>!c.active},
-  applying:         {label:'応募中', fn:c=>c.u.status==='応募中'},
-  second:           {label:'2本目応募中', fn:c=>c.u.status==='2本目応募中'},
-  done:             {label:'完了', fn:c=>c.u.status==='完了'},
-  stopped:          {label:'停止', fn:c=>c.u.status==='停止'},
+  applying:         {label:'応募中', fn:c=>c.status==='応募中'},
+  second:           {label:'2本目応募中', fn:c=>c.status==='2本目応募中'},
+  done:             {label:'完了', fn:c=>c.status==='完了'},
+  stopped:          {label:'停止', fn:c=>c.status==='停止'},
   unwon:            {label:'未当選', fn:c=>c.wins===0},
   won_any:          {label:'当選あり', fn:c=>c.wins>=1},
   entered:          {label:'買付成功済み', fn:c=>c.entered},
   restricted:       {label:'制限中（全員）', fn:c=>c.restrict==='restricted'},
+  restricted_entered:{label:'制限中（買付済み）', fn:c=>c.restrict==='restricted' && c.restrictBasis==='entry'},
+  restricted_pending:{label:'制限中（当選のみ・入店未完了）', fn:c=>c.restrict==='restricted' && c.restrictBasis==='won'},
   restriction_ended:{label:'制限明け', fn:c=>c.restrict==='ended'},
   restriction_soon: {label:'まもなく解除(7日以内)', fn:c=>c.daysLeft!=null && c.daysLeft<=7},
   churn:            {label:'離脱疑い（活動歴あり×非アクティブ×未当選）', fn:c=>c.lastOrd>=0 && !c.active && c.wins===0},
@@ -1069,6 +1112,7 @@ function segRows(){
     const la=euLastActivity(u.id, ord);
     return { u, wins:euWinCount(u.id), entered:euHasEntered(u.id),
       restrict:euRestrictState(u.id, today), daysLeft:euRestrictDaysLeft(u.id, today),
+      restrictBasis:euRestrictBasis(u.id, today), status:euDisplayStatus(u, today),
       lastOrd:la.ord, lastLabel:la.label,
       active: la.ord>=0 && (latest-la.ord) < ACTIVE_RECENT_WEEKS,
       agencyId: agencyIdOf(u) };
@@ -1082,7 +1126,7 @@ function runSegment(){
   const presetFn=(SEG_PRESETS[_segPreset]||SEG_PRESETS.all).fn;
   const rows=segRows().filter(c=>{
     if(!presetFn(c)) return false;
-    if(fStatus && c.u.status!==fStatus) return false;
+    if(fStatus && c.status!==fStatus) return false;
     if(fWins==='0' && c.wins!==0) return false;
     if(fWins==='1' && c.wins!==1) return false;
     if(fWins==='2+' && c.wins<2) return false;
@@ -1109,7 +1153,7 @@ function runSegment(){
     (rows.length?rows.map(r=>{ const ag=AG.agencies.find(a=>a.id===r.agencyId);
       return `<tr><td>${esc(r.u.line_name)||'—'}</td><td>${esc(r.u.real_name)||'—'}</td>`+
         `<td class="muted">${ag?esc(ag.name):'—'}</td>`+
-        `<td><span class="badge b-no">${esc(r.u.status)||'—'}</span></td>`+
+        `<td><span class="badge ${r.status==='制限中'?'b-soon':'b-no'}">${esc(r.status)||'—'}</span></td>`+
         `<td>${winB(r.wins)}</td><td>${resB(r.restrict)}</td>`+
         `<td>${r.active?'<span class="badge b-ok">アクティブ</span>':'<span class="badge b-no">非アクティブ</span>'}</td>`+
         `<td class="muted">${esc(r.lastLabel)}</td><td class="muted">${esc(r.u.note)||''}</td></tr>`;
@@ -1134,7 +1178,7 @@ function exportSegCSV(){
   if(_segResult.length===0){ toast('対象がありません'); return; }
   const rows=[['LINE名','氏名','代理店','状態','当選回数','購入制限','稼働','最終稼働','備考']];
   _segResult.forEach(r=>{ const ag=AG.agencies.find(a=>a.id===r.agencyId);
-    rows.push([r.u.line_name||'', r.u.real_name||'', ag?ag.name:'', r.u.status||'',
+    rows.push([r.u.line_name||'', r.u.real_name||'', ag?ag.name:'', r.status||'',
       r.wins, r.restrict==='restricted'?'制限中':r.restrict==='ended'?'制限明け':'なし',
       r.active?'アクティブ':'非アクティブ', r.lastLabel, r.u.note||'']); });
   downloadCSV('セグメント抽出.csv', rows);
