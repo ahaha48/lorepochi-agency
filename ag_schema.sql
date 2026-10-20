@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS ag_config (
   cur_week                  INTEGER DEFAULT 1,
   available_months          JSONB DEFAULT '[1]',
   weeks_per_month           JSONB DEFAULT '{"1":[1,2,3,4]}',  -- 各月の週リスト
-  required_stores           INTEGER DEFAULT 5,   -- 週次条件の必要店舗数（イベント時6）
+  required_stores           INTEGER DEFAULT 5,   -- 週次条件の必要店舗数（6店舗化の適用開始週より前の週に適用）
   fee_enduser_weekly        INTEGER DEFAULT 1000,  -- v3: 1応募（5店舗＋結果SS）につき1,000円
   fee_enduser_monthly_bonus INTEGER DEFAULT 0,     -- v3: 月間コンプリートボーナスは廃止
   cap_enduser_monthly       INTEGER DEFAULT 6000,  -- v3: 1,000円×最大6週。上限で切り捨てないための保険値
@@ -73,7 +73,10 @@ CREATE TABLE IF NOT EXISTS ag_config (
   fee_agency_win_2nd        INTEGER DEFAULT 70000, -- 入店完了2件目以降
   restriction_days          INTEGER DEFAULT 180,
   rule_v4_from_month        INTEGER DEFAULT 9,     -- v4: この月以降「結果SS日で計上」(②)。NULL で v3 に戻る
-  rule_v4_complete_from_month INTEGER DEFAULT 10   -- v4b: この月以降「初月は回数分／2ヶ月目以降はコンプリート必須」(③)。NULL で③オフ
+  rule_v4_complete_from_month INTEGER DEFAULT 10,  -- v4b: この月以降「初月は回数分／2ヶ月目以降はコンプリート必須」(③)。NULL で③オフ
+  required_stores_v2        INTEGER DEFAULT 6,   -- 6店舗化: 適用開始週以降の必要店舗数（三越日本橋の追加）
+  required_stores_v2_from_month INTEGER,         -- 6店舗化の適用開始（月）。NULL なら全期間 required_stores
+  required_stores_v2_from_week  INTEGER          -- 6店舗化の適用開始（週）
 );
 
 INSERT INTO ag_config (key) VALUES ('main') ON CONFLICT (key) DO NOTHING;

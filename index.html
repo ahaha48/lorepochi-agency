@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ロレポチ 代理店版</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="ag_calc.js?v=20260925c"></script>
+<script src="ag_calc.js?v=20261021"></script>
 <style>
   :root{
     --green:#0B5C3B; --green-dark:#063D27; --green-light:#127A4C;
@@ -358,6 +358,9 @@ const CFG_DEFAULT = { key:'main', cur_month:1, cur_week:1, available_months:[1],
   fee_agency_weekly:1000, fee_agency_win_1st:50000, fee_agency_win_2nd:70000, restriction_days:180,
   rule_v4_from_month:9,             // v4: この月以降「結果SS日で計上」(②)。null で v3
   rule_v4_complete_from_month:10 }; // v4b: この月以降「初月は回数分／2ヶ月目以降はコンプリート必須」(③)。null で③オフ
+// 6店舗化の設定（required_stores_v2 / required_stores_v2_from_month / required_stores_v2_from_week）は CFG_DEFAULT に入れない。
+// saveConfig() が AG.config を丸ごと upsert するため、DB に列が無い間に既定値を持つと月・週の保存が失敗する。
+// 列は ag_required_stores_v2_migration.sql で追加し、値は DB 行から Object.assign で入る（無ければ AgCalc.requiredStores が従来の required_stores を返す）。
 let AG = { agencies:[], endUsers:[], weekly:[], wins:[], bankAccounts:[], config:Object.assign({},CFG_DEFAULT) };
 
 // 銀行口座を閲覧・編集できる管理者（RLSでもDB側で強制。ここはUI表示制御用）
@@ -474,7 +477,7 @@ async function saveResultSSDate(euId, val){
 function renderWeekly(){
   const m=cfg().cur_month, wk=cfg().cur_week;
   $('#weekly-label').textContent=`${m}月 第${wk}週`;
-  $('#req1').textContent=cfg().required_stores;
+  $('#req1').textContent=AgCalc.requiredStores(m,wk,cfg());
   const sel=$('#weekly-agency'); const cur=sel.value;
   sel.innerHTML='<option value="">全代理店</option>'+AG.agencies.map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('');
   if(cur) sel.value=cur;
@@ -484,7 +487,7 @@ function renderWeekly(){
   if(q) list=list.filter(u=>((u.line_name||'')+' '+(u.real_name||'')).toLowerCase().includes(q));
   const t=$('#weekly-table');
   if(!list.length){ t.innerHTML=`<tr><td class="empty">${q?'検索に一致するエンドユーザーはいません':'エンドユーザーがいません。「エンドユーザー」画面で追加してください。'}</td></tr>`; return; }
-  const need=cfg().required_stores;
+  const need=AgCalc.requiredStores(m,wk,cfg());
   const cls=v=>v>=need?'good':(v>0?'bad':'');
   let h=`<tr><th>エンドユーザー</th><th>所属</th><th>抽選店舗</th><th>結果SS</th><th>状態</th><th>操作</th></tr>`;
   list.forEach(u=>{
@@ -975,7 +978,7 @@ function renderDash(){
   const deltaTxt=delta==null?'—':(delta>0?'▲ +'+delta:delta<0?'▼ '+delta:'±0');
   $('#dash-week-label').textContent=`${m}月 第${wk}週`;
   const wkpi=[
-    ['申込完了（'+cfg().required_stores+'店舗以上）',ws.applied+'名',''],
+    ['申込完了（'+AgCalc.requiredStores(m,wk,cfg())+'店舗以上）',ws.applied+'名',''],
     [hasPrev?`前週比（${pw.month}月第${pw.week}週 ${pws.applied}名）`:(pw?`前週比（${pw.month}月第${pw.week}週 入力なし）`:'前週比（前週なし）'),deltaTxt,''],
     ['結果SS報告',ws.resultSS+'名',''],['達成（フィー対象）',ws.feeOn+'名','gold'],['当選者',ws.winners+'名','']
   ];

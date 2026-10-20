@@ -35,6 +35,13 @@
  *  - ③「初月は回数分／2ヶ月目以降はコンプリート必須」は rule_v4_complete_from_month（10月）から
  *      ②だけ適用の月（9月）は、計上カウント×単価をそのまま支払う（コンプリート条件なし）
  *      null で③を全期間オフ。キー未設定（undefined）なら rule_v4_from_month と同じ月から③を適用
+ *
+ * 6店舗化（required_stores_v2 / required_stores_v2_from_month / required_stores_v2_from_week）:
+ *  - 2026-10-21(水)の週から応募店舗が5→6（三越日本橋が追加）
+ *  - 必要店舗数は週ごとに requiredStores(month, week, cfg) で決める:
+ *      (from_month, from_week) 以降の週 = required_stores_v2（6）／それより前の週 = required_stores（5）
+ *      from_month / from_week が null（DB未移行・ロールバック）なら全期間 required_stores
+ *  - 過去週の達成判定・フィーは変わらない（遡及しない）
  * ================================================================ */
 (function (global) {
   'use strict';
@@ -51,14 +58,26 @@
     restriction_days: 180,
     rule_v4_from_month: 9,          // v4: この月以降に「結果SS日で計上」(②) を適用。null で v4 全体を無効
     rule_v4_complete_from_month: 10, // v4b: この月以降に「初月は回数分／2ヶ月目以降はコンプリート必須」(③) を適用。null で③をオフ
+    required_stores_v2: 6,               // 6店舗化: 適用開始週以降の必要店舗数（三越日本橋の追加）
+    required_stores_v2_from_month: null, // 6店舗化の適用開始（月, 週）。null なら全期間 required_stores（従来）
+    required_stores_v2_from_week: null,
   };
 
   // (aM,aW) <= (bM,bW)
   function weekLE(aM, aW, bM, bW) { return aM < bM || (aM === bM && aW <= bW); }
 
+  // その週の必要店舗数。(required_stores_v2_from_month, _from_week) 以降は required_stores_v2、
+  // それより前（または適用開始が未設定・month/week 不明）は従来の required_stores
+  function requiredStores(month, week, cfg) {
+    var fm = cfg.required_stores_v2_from_month, fw = cfg.required_stores_v2_from_week;
+    if (fm == null || fw == null || month == null || week == null) return cfg.required_stores;
+    if (!weekLE(fm, fw, month, week)) return cfg.required_stores;
+    return cfg.required_stores_v2 != null ? cfg.required_stores_v2 : cfg.required_stores;
+  }
+
   function conditionMet(row, cfg) {
-    // 抽選は「必要店舗数以上」、結果は「結果SS確認（1タップ・真偽）」で達成
-    return (row.lottery_stores || 0) >= cfg.required_stores &&
+    // 抽選は「その週の必要店舗数以上」、結果は「結果SS確認（1タップ・真偽）」で達成
+    return (row.lottery_stores || 0) >= requiredStores(row.month, row.week, cfg) &&
            row.result_ss === true;
   }
 
@@ -283,7 +302,7 @@
     var rows = weeklyRows.filter(function (r) { return r.month === month && r.week === week; });
     var applied = 0, resultSS = 0, met = 0, feeOn = 0;
     rows.forEach(function (r) {
-      if ((r.lottery_stores || 0) >= cfg.required_stores) applied++;
+      if ((r.lottery_stores || 0) >= requiredStores(month, week, cfg)) applied++;
       if (r.result_ss === true) resultSS++;
       if (conditionMet(r, cfg)) met++;
       if (feeApplies(r, wins, cfg)) feeOn++;
@@ -341,7 +360,7 @@
   }
 
   var API = {
-    DEFAULT_CONFIG: DEFAULT_CONFIG, weekLE: weekLE, conditionMet: conditionMet,
+    DEFAULT_CONFIG: DEFAULT_CONFIG, weekLE: weekLE, requiredStores: requiredStores, conditionMet: conditionMet,
     hasWinByWeek: hasWinByWeek, feeApplies: feeApplies,
     v4Applies: v4Applies, completeRuleApplies: completeRuleApplies, accountingMonthOfResult: accountingMonthOfResult, rowAccountingMonth: rowAccountingMonth,
     firstMonthOf: firstMonthOf, monthlyCountRows: monthlyCountRows, isMonthComplete: isMonthComplete,
