@@ -37,7 +37,8 @@
  *      null で③を全期間オフ。キー未設定（undefined）なら rule_v4_from_month と同じ月から③を適用
  *
  * 6店舗化（required_stores_v2 / required_stores_v2_from_month / required_stores_v2_from_week）:
- *  - 2026-10-21(水)の週から応募店舗が5→6（三越日本橋が追加）
+ *  - 応募店舗が5→6（三越日本橋が追加）。適用開始は 2026年10月 第4週（10/19週の応募分、結果発表 10/28(水)）。
+ *    第3週（結果 10/21）までは5店舗のまま
  *  - 必要店舗数は週ごとに requiredStores(month, week, cfg) で決める:
  *      (from_month, from_week) 以降の週 = required_stores_v2（6）／それより前の週 = required_stores（5）
  *      from_month / from_week が null（DB未移行・ロールバック）なら全期間 required_stores

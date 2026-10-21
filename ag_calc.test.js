@@ -358,36 +358,37 @@ eq(C.prevWeekOf(wl, 8, 3), null,             '先頭の週の前週は null');
 eq(C.prevWeekOf(wl, 10, 1), null,            '未登録の週は null');
 
 // ---------------------------------------------------------------
-// 6店舗化: required_stores_v2 の週ゲート（2026-10-21 の週から 5→6 店舗）
+// 6店舗化: required_stores_v2 の週ゲート（本番は 10月 第4週＝結果10/28 の週から 5→6 店舗。第3週までは 5）
 // ---------------------------------------------------------------
 console.log('\n6店舗化: requiredStores の週ゲート');
-var cfg6 = Object.assign({}, C.DEFAULT_CONFIG, { required_stores: 5, required_stores_v2: 6, required_stores_v2_from_month: 10, required_stores_v2_from_week: 3 });
+var cfg6 = Object.assign({}, C.DEFAULT_CONFIG, { required_stores: 5, required_stores_v2: 6, required_stores_v2_from_month: 10, required_stores_v2_from_week: 4 });
 eq(C.requiredStores(10, 2, cfg6), 5, '10月第2週（適用前）は5店舗');
-eq(C.requiredStores(10, 3, cfg6), 6, '10月第3週（適用開始週）は6店舗');
-eq(C.requiredStores(10, 4, cfg6), 6, '10月第4週は6店舗');
+eq(C.requiredStores(10, 3, cfg6), 5, '10月第3週（適用前・結果10/21）も5店舗');
+eq(C.requiredStores(10, 4, cfg6), 6, '10月第4週（適用開始週・結果10/28）は6店舗');
+eq(C.requiredStores(10, 5, cfg6), 6, '10月第5週は6店舗');
 eq(C.requiredStores(11, 1, cfg6), 6, '11月第1週（月またぎ）も6店舗');
 eq(C.requiredStores(9, 5, cfg6),  5, '9月第5週は5店舗');
-eq(C.requiredStores(10, 3, Object.assign({}, cfg6, { required_stores_v2_from_month: null })), 5, 'from_month=null なら全期間 required_stores（ロールバック）');
-eq(C.requiredStores(10, 3, Object.assign({}, cfg6, { required_stores_v2_from_week: null })),  5, 'from_week=null でも従来値');
+eq(C.requiredStores(10, 4, Object.assign({}, cfg6, { required_stores_v2_from_month: null })), 5, 'from_month=null なら全期間 required_stores（ロールバック）');
+eq(C.requiredStores(10, 4, Object.assign({}, cfg6, { required_stores_v2_from_week: null })),  5, 'from_week=null でも従来値');
 eq(C.requiredStores(undefined, undefined, cfg6), 5, 'month/week の無い行は従来値');
-eq(C.requiredStores(10, 3, { required_stores: 5 }), 5, 'DB未移行（キー自体が無い）は従来値');
-eq(C.requiredStores(10, 3, C.DEFAULT_CONFIG), 5, 'DEFAULT_CONFIG（from 未設定）は従来値＝既存テストに影響なし');
+eq(C.requiredStores(10, 4, { required_stores: 5 }), 5, 'DB未移行（キー自体が無い）は従来値');
+eq(C.requiredStores(10, 4, C.DEFAULT_CONFIG), 5, 'DEFAULT_CONFIG（from 未設定）は従来値＝既存テストに影響なし');
 
 console.log('\n6店舗化: conditionMet / weekStats が週ごとの必要店舗数を使う');
-eq(C.conditionMet({ month:10, week:2, lottery_stores:5, result_ss:true }, cfg6), true,  '適用前の週は5店舗＋結果SSで達成');
-eq(C.conditionMet({ month:10, week:3, lottery_stores:5, result_ss:true }, cfg6), false, '適用週は5店舗では未達');
-eq(C.conditionMet({ month:10, week:3, lottery_stores:6, result_ss:true }, cfg6), true,  '適用週は6店舗＋結果SSで達成');
-eq(C.conditionMet({ month:10, week:3, lottery_stores:7, result_ss:true }, cfg6), true,  '7店舗でも達成');
-eq(C.conditionMet({ month:10, week:3, lottery_stores:6, result_ss:false }, cfg6), false, '結果SS無しは未達（従来どおり）');
+eq(C.conditionMet({ month:10, week:3, lottery_stores:5, result_ss:true }, cfg6), true,  '適用前の週（第3週）は5店舗＋結果SSで達成');
+eq(C.conditionMet({ month:10, week:4, lottery_stores:5, result_ss:true }, cfg6), false, '適用週（第4週）は5店舗では未達');
+eq(C.conditionMet({ month:10, week:4, lottery_stores:6, result_ss:true }, cfg6), true,  '適用週は6店舗＋結果SSで達成');
+eq(C.conditionMet({ month:10, week:4, lottery_stores:7, result_ss:true }, cfg6), true,  '7店舗でも達成');
+eq(C.conditionMet({ month:10, week:4, lottery_stores:6, result_ss:false }, cfg6), false, '結果SS無しは未達（従来どおり）');
 var rows6 = [
-  { end_user_id:1, month:10, week:2, lottery_stores:5, result_ss:true },
   { end_user_id:1, month:10, week:3, lottery_stores:5, result_ss:true },
-  { end_user_id:2, month:10, week:3, lottery_stores:6, result_ss:true },
+  { end_user_id:1, month:10, week:4, lottery_stores:5, result_ss:true },
+  { end_user_id:2, month:10, week:4, lottery_stores:6, result_ss:true },
 ];
-var ws6a = C.weekStats(rows6, [], cfg6, 10, 2);
-eq([ws6a.applied, ws6a.met], [1, 1], 'weekStats 10月第2週: 5店舗で申込完了・達成');
-var ws6b = C.weekStats(rows6, [], cfg6, 10, 3);
-eq([ws6b.applied, ws6b.met], [1, 1], 'weekStats 10月第3週: 6店舗の1名だけ申込完了・達成（5店舗の1名は未達）');
+var ws6a = C.weekStats(rows6, [], cfg6, 10, 3);
+eq([ws6a.applied, ws6a.met], [1, 1], 'weekStats 10月第3週: 5店舗で申込完了・達成');
+var ws6b = C.weekStats(rows6, [], cfg6, 10, 4);
+eq([ws6b.applied, ws6b.met], [1, 1], 'weekStats 10月第4週: 6店舗の1名だけ申込完了・達成（5店舗の1名は未達）');
 eq(C.feeApplies(rows6[0], [], cfg6), true,  'feeApplies: 適用前の週の5店舗はフィー対象のまま（遡及しない）');
 eq(C.feeApplies(rows6[1], [], cfg6), false, 'feeApplies: 適用週の5店舗はフィー対象外');
 eq(C.feeApplies(rows6[2], [], cfg6), true,  'feeApplies: 適用週の6店舗はフィー対象');
